@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-fixed-variant": "#2d476f",
+                        "on-secondary-fixed-variant": "#3c494e",
+                        "primary-container": "#1a365d",
+                        "surface-container": "#e5eeff",
+                        "on-primary": "#ffffff",
+                        "surface-variant": "#d4e4fc",
+                        "secondary": "#546066",
+                        "on-secondary-container": "#58646a",
+                        "surface-container-low": "#eff4ff",
+                        "on-tertiary-fixed": "#2b1700",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed": "#d8e4eb",
+                        "on-tertiary-fixed-variant": "#633f0f",
+                        "inverse-on-surface": "#eaf1ff",
+                        "on-surface": "#0d1c2e",
+                        "on-surface-variant": "#43474e",
+                        "surface-bright": "#f8f9ff",
+                        "primary": "#002045",
+                        "error": "#ba1a1a",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-container": "#d5e2e9",
+                        "on-background": "#0d1c2e",
+                        "secondary-fixed-dim": "#bcc8cf",
+                        "outline": "#74777f",
+                        "inverse-primary": "#adc7f7",
+                        "primary-fixed": "#d6e3ff",
+                        "surface-dim": "#ccdbf4",
+                        "surface-tint": "#455f88",
+                        "on-tertiary-container": "#c6955e",
+                        "tertiary-fixed-dim": "#f2bc82",
+                        "on-primary-fixed": "#001b3c",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed": "#ffddba",
+                        "on-error": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-fixed": "#111d22",
+                        "surface-container-high": "#dce9ff",
+                        "surface-container-highest": "#d4e4fc",
+                        "error-container": "#ffdad6",
+                        "tertiary-container": "#4f2e00",
+                        "background": "#f8f9ff",
+                        "surface": "#f8f9ff",
+                        "inverse-surface": "#223144",
+                        "tertiary": "#321b00",
+                        "on-primary-container": "#86a0cd",
+                        "outline-variant": "#c4c6cf",
+                        "primary-fixed-dim": "#adc7f7"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sm": "8px",
+                        "xs": "4px",
+                        "unit": "4px",
+                        "xl": "40px",
+                        "gutter": "24px",
+                        "lg": "24px",
+                        "container-max": "1280px",
+                        "md": "16px"
+                    },
+                    "fontFamily": {
+                        "button": ["Inter"],
+                        "h1": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-md": ["Inter"],
+                        "h3": ["Inter"],
+                        "h2": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "button": ["16px", {"lineHeight": "20px", "fontWeight": "500"}],
+                        "h1": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "label-md": ["14px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "h3": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "h2": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-surface-container-low min-h-screen flex items-center justify-center relative overflow-hidden">
+<div class="absolute inset-0 z-0">
+<img alt="Sacred Space Background" class="w-full h-full object-cover opacity-10 grayscale" data-alt="A cinematic, low-angle shot of a majestic cathedral interior featuring high vaulted ceilings and intricate stone columns. The atmosphere is serene and reverent, with soft, natural morning light filtering through high windows to create a high-key, minimalist aesthetic. The color palette is dominated by muted whites and soft greys, echoing a modern light-mode design that prioritizes calm and focus. The lighting is diffused and atmospheric, perfect for a corporate and spiritual administration platform." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAbamMKtcWWILzuYruxrdvFrhD34JPTF6azd2za0CePECkx_KM-x19tNqYGrO4BgcBhCJxHephGctNLyrpJbGuU50nhpYdpnepCwSye8H2TdzVGKQuDe2Y1Ylk5gG5bEU-3RP0QYeXqIpB0WMEaKdTUUs5FR48BePHTFBxmumiaPJshSkX23QmrcYF_tOAy97CA05_gtScs5JsoDa1oQ_y9jlNvV_R3UyZoamjZhgf83Jqj4T2Iwexm_HNV2iCFb7ewCt3aB5kNpFxW"/>
+<div class="absolute inset-0 bg-gradient-to-tr from-surface-container-low via-transparent to-surface-bright/50"></div>
+</div>
+<main class="relative z-10 w-full max-w-[440px] px-gutter">
+<div class="bg-surface-container-lowest rounded-xl shadow-[0px_4px_20px_rgba(26,54,93,0.05)] p-xl border border-outline-variant/30">
+<div class="flex flex-col items-center mb-xl text-center">
+<div class="mb-md flex items-center justify-center bg-primary-container p-sm rounded-lg text-on-primary">
+<span class="material-symbols-outlined text-[32px]">church</span>
+</div>
+<h1 class="font-h2 text-h2 text-primary mb-xs">MassBook</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">Parish Administration Portal</p>
+</div>
+<form class="space-y-lg">
+<div class="space-y-sm">
+<label class="font-label-md text-label-md text-primary block" for="email">
+                        Email Address
+                    </label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-outline text-[20px]">mail</span>
+<input class="w-full pl-[48px] pr-md py-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-surface-variant focus:border-primary outline-none transition-all font-body-md text-body-md text-on-surface placeholder:text-outline/60" id="email" placeholder="administrator@parish.org" type="email"/>
+</div>
+</div>
+<div class="space-y-sm">
+<div class="flex justify-between items-center">
+<label class="font-label-md text-label-md text-primary block" for="password">
+                            Password
+                        </label>
+<a class="font-label-md text-label-md text-primary-container hover:underline transition-all" href="#">
+                            Forgot Password?
+                        </a>
+</div>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-outline text-[20px]">lock</span>
+<input class="w-full pl-[48px] pr-md py-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-surface-variant focus:border-primary outline-none transition-all font-body-md text-body-md text-on-surface placeholder:text-outline/60" id="password" placeholder="••••••••" type="password"/>
+</div>
+</div>
+<div class="flex items-center space-x-sm pt-xs">
+<input class="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary-container" id="remember" type="checkbox"/>
+<label class="font-body-sm text-body-sm text-on-surface-variant" for="remember">Remember this device</label>
+</div>
+<button class="w-full bg-primary-container hover:bg-on-primary-fixed-variant text-on-primary font-button text-button py-md rounded-lg shadow-sm transition-all active:scale-[0.98]" type="submit">
+                    Login to Portal
+                </button>
+</form>
+<div class="mt-xl pt-lg border-t border-outline-variant/30 text-center">
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                    Authorized access only. By logging in, you agree to the 
+                    <a class="text-primary hover:underline font-medium" href="#">Terms of Service</a>.
+                </p>
+</div>
+</div>
+<div class="mt-lg flex justify-center space-x-lg text-on-surface-variant/60">
+<div class="flex items-center space-x-xs">
+<span class="material-symbols-outlined text-[18px]">verified_user</span>
+<span class="font-label-md text-[12px] tracking-widest uppercase">Secure SSL</span>
+</div>
+<div class="flex items-center space-x-xs">
+<span class="material-symbols-outlined text-[18px]">history_edu</span>
+<span class="font-label-md text-[12px] tracking-widest uppercase">Sacramental Integrity</span>
+</div>
+</div>
+</main>
+</body></html>

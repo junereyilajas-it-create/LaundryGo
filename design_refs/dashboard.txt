@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-primary-fixed-variant": "#2d476f",
+                    "on-secondary-fixed-variant": "#3c494e",
+                    "primary-container": "#1a365d",
+                    "surface-container": "#e5eeff",
+                    "on-primary": "#ffffff",
+                    "surface-variant": "#d4e4fc",
+                    "secondary": "#546066",
+                    "on-secondary-container": "#58646a",
+                    "surface-container-low": "#eff4ff",
+                    "on-tertiary-fixed": "#2b1700",
+                    "on-error-container": "#93000a",
+                    "secondary-fixed": "#d8e4eb",
+                    "on-tertiary-fixed-variant": "#633f0f",
+                    "inverse-on-surface": "#eaf1ff",
+                    "on-surface": "#0d1c2e",
+                    "on-surface-variant": "#43474e",
+                    "surface-bright": "#f8f9ff",
+                    "primary": "#002045",
+                    "error": "#ba1a1a",
+                    "surface-container-lowest": "#ffffff",
+                    "secondary-container": "#d5e2e9",
+                    "on-background": "#0d1c2e",
+                    "secondary-fixed-dim": "#bcc8cf",
+                    "outline": "#74777f",
+                    "inverse-primary": "#adc7f7",
+                    "primary-fixed": "#d6e3ff",
+                    "surface-tint": "#455f88",
+                    "on-tertiary-container": "#c6955e",
+                    "tertiary-fixed-dim": "#f2bc82",
+                    "on-primary-fixed": "#001b3c",
+                    "on-secondary": "#ffffff",
+                    "tertiary-fixed": "#ffddba",
+                    "on-error": "#ffffff",
+                    "on-tertiary": "#ffffff",
+                    "on-secondary-fixed": "#111d22",
+                    "surface-container-high": "#dce9ff",
+                    "surface-container-highest": "#d4e4fc",
+                    "error-container": "#ffdad6",
+                    "tertiary-container": "#4f2e00",
+                    "background": "#f8f9ff",
+                    "surface": "#f8f9ff",
+                    "inverse-surface": "#223144",
+                    "tertiary": "#321b00",
+                    "on-primary-container": "#86a0cd",
+                    "outline-variant": "#c4c6cf",
+                    "primary-fixed-dim": "#adc7f7"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "sm": "8px",
+                    "xs": "4px",
+                    "unit": "4px",
+                    "xl": "40px",
+                    "gutter": "24px",
+                    "lg": "24px",
+                    "container-max": "1280px",
+                    "md": "16px"
+            },
+            "fontFamily": {
+                    "button": ["Inter"],
+                    "h1": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "body-md": ["Inter"],
+                    "label-md": ["Inter"],
+                    "h3": ["Inter"],
+                    "h2": ["Inter"],
+                    "body-sm": ["Inter"]
+            },
+            "fontSize": {
+                    "button": ["16px", {"lineHeight": "20px", "fontWeight": "500"}],
+                    "h1": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "label-md": ["14px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "h3": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "h2": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #f8f9ff;
+            color: #0d1c2e;
+            -webkit-font-smoothing: antialiased;
+        }
+    </style>
+</head>
+<body class="flex min-h-screen">
+<!-- SideNavBar -->
+<aside class="hidden md:flex flex-col h-screen w-64 bg-surface-container-low dark:bg-inverse-surface border-r border-outline-variant dark:border-outline py-lg fixed left-0 top-0 z-50">
+<div class="px-lg mb-xl">
+<h1 class="font-h3 text-h3 text-primary dark:text-primary-fixed font-bold">MassBook</h1>
+<p class="font-label-md text-label-md text-secondary opacity-70">Parish Administration</p>
+</div>
+<nav class="flex-1 space-y-xs">
+<a class="flex items-center gap-md py-sm px-md bg-primary dark:bg-primary-fixed text-on-primary dark:text-on-primary-fixed rounded-lg mx-md scale-[0.98] transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-md py-sm px-md text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-surface-container-highest mx-md rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_month">calendar_month</span>
+<span class="font-label-md text-label-md">Event Booking</span>
+</a>
+<a class="flex items-center gap-md py-sm px-md text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-surface-container-highest mx-md rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="church">church</span>
+<span class="font-label-md text-label-md">Mass Schedule</span>
+</a>
+</nav>
+<div class="px-md mb-md">
+<button class="w-full py-md bg-primary-container text-on-primary rounded-lg font-button text-button shadow-sm hover:opacity-90 transition-opacity">
+                New Booking
+            </button>
+</div>
+<div class="mt-auto space-y-xs pt-md border-t border-outline-variant/30">
+<a class="flex items-center gap-md py-sm px-md text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-surface-container-highest mx-md rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+<a class="flex items-center gap-md py-sm px-md text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-surface-container-highest mx-md rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="contact_support">contact_support</span>
+<span class="font-label-md text-label-md">Support</span>
+</a>
+</div>
+</aside>
+<div class="flex-1 md:ml-64 flex flex-col">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-on-background shadow-[0px_4px_20px_rgba(26,54,93,0.05)] docked full-width top-0 sticky z-40 flex justify-between items-center px-lg py-md w-full">
+<div class="flex items-center gap-md">
+<span class="md:hidden material-symbols-outlined text-primary cursor-pointer" data-icon="menu">menu</span>
+<h2 class="font-h3 text-h3 text-primary dark:text-primary-fixed-dim">Welcome, Fr. Niel</h2>
+</div>
+<div class="flex items-center gap-lg">
+<div class="hidden lg:flex items-center bg-surface-container-low px-md py-xs rounded-full border border-outline-variant">
+<span class="material-symbols-outlined text-outline text-sm" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 font-body-sm text-body-sm text-on-surface w-64 placeholder:text-outline" placeholder="Search appointments..." type="text"/>
+</div>
+<div class="flex items-center gap-md">
+<button class="text-on-surface-variant hover:bg-surface-container-low p-xs rounded-full transition-colors duration-200 Active: opacity-80">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-container-low p-xs rounded-full transition-colors duration-200 Active: opacity-80">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-primary-fixed ml-sm">
+<img alt="User profile" data-alt="A professional and friendly portrait of a middle-aged priest in traditional clerical clothing. He is standing in a brightly lit, modern administrative office with soft white walls and clean lines. The lighting is soft and natural, emphasizing a serene and welcoming atmosphere consistent with a modern light-mode interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCLKjRAQtS6jgZRvUPyro7FOXqgmBoIQVcPTm2tupPPGiHVrnwaKjpRwUX34FhUhsTcxmZCe_6wyy-Gk-MP2V7Jg5qymhedcCoyA3fNemyvQKRC6eH0AjUQd1ED88XT_F2ag1s-zMSpe_z6Z4HUujWYRU1jUtovB3c-H-QuFj4ynfeUIC3aWJ42XzZHV1F0QgovFBvpjL8hIKpoVnKlz73uMkHBz_va04jGMHUDYrHcin6ZQcXeF_WTAKCo2RCaimbchv4XW-PSU3WH"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="p-lg max-w-container-max mx-auto w-full space-y-xl">
+<!-- Quick Stats & Bento Grid -->
+<section class="grid grid-cols-1 lg:grid-cols-12 gap-lg">
+<!-- Main Priority Card: Pending Approvals -->
+<div class="lg:col-span-8 bg-surface-container-lowest rounded-xl p-lg shadow-[0px_4px_20px_rgba(26,54,93,0.05)] border border-outline-variant/10">
+<div class="flex justify-between items-center mb-lg">
+<h3 class="font-h2 text-h2 text-primary">Pending Approvals</h3>
+<span class="bg-primary-fixed text-on-primary-fixed px-md py-xs rounded-full font-label-md text-label-md">12 New</span>
+</div>
+<div class="space-y-md">
+<div class="flex items-center justify-between p-md bg-surface-container-low rounded-lg border border-transparent hover:border-primary-fixed transition-all cursor-pointer">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 bg-white rounded-lg flex items-center justify-center text-primary shadow-sm">
+<span class="material-symbols-outlined" data-icon="church">church</span>
+</div>
+<div>
+<p class="font-h3 text-h3 text-primary">Wedding: Santos &amp; Cruz</p>
+<p class="font-body-sm text-body-sm text-secondary">Saturday, Oct 14 • Main Cathedral</p>
+</div>
+</div>
+<div class="flex gap-sm">
+<button class="p-sm text-error hover:bg-error-container rounded-lg transition-colors"><span class="material-symbols-outlined" data-icon="close">close</span></button>
+<button class="p-sm text-primary bg-primary-fixed hover:bg-primary-container hover:text-white rounded-lg transition-colors"><span class="material-symbols-outlined" data-icon="check">check</span></button>
+</div>
+</div>
+<div class="flex items-center justify-between p-md bg-surface-container-low rounded-lg border border-transparent hover:border-primary-fixed transition-all cursor-pointer">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 bg-white rounded-lg flex items-center justify-center text-primary shadow-sm">
+<span class="material-symbols-outlined" data-icon="child_care">child_care</span>
+</div>
+<div>
+<p class="font-h3 text-h3 text-primary">Baptism: Elena Rivera</p>
+<p class="font-body-sm text-body-sm text-secondary">Sunday, Oct 15 • Chapel of St. Mary</p>
+</div>
+</div>
+<div class="flex gap-sm">
+<button class="p-sm text-error hover:bg-error-container rounded-lg transition-colors"><span class="material-symbols-outlined" data-icon="close">close</span></button>
+<button class="p-sm text-primary bg-primary-fixed hover:bg-primary-container hover:text-white rounded-lg transition-colors"><span class="material-symbols-outlined" data-icon="check">check</span></button>
+</div>
+</div>
+</div>
+<button class="mt-lg w-full py-sm text-primary font-label-md text-label-md hover:bg-surface-container transition-colors rounded-lg">View All Requests</button>
+</div>
+<!-- Priest Status Card (Formerly Priest On-Call) -->
+<div class="lg:col-span-4 bg-primary-container text-on-primary rounded-xl p-lg flex flex-col justify-between shadow-lg relative overflow-hidden">
+<div class="absolute -right-8 -top-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+<div>
+<p class="font-label-md text-label-md text-on-primary-container uppercase tracking-widest mb-xs">Current Availability</p>
+<h3 class="font-h2 text-h2 mb-md">Fr. Niel</h3>
+<p class="font-body-md text-body-md opacity-80">Daily Noon Mass - Main Altar</p>
+</div>
+<div class="mt-xl">
+<div class="flex items-center gap-sm bg-white/10 p-sm rounded-lg backdrop-blur-md">
+<span class="material-symbols-outlined text-sm" data-icon="emergency">emergency</span>
+<p class="font-label-md text-label-md">Parish Emergency: (555) 012-3456</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Calendar Section -->
+<section class="grid grid-cols-1 lg:grid-cols-12 gap-lg">
+<!-- Actions -->
+<div class="lg:col-span-4 space-y-lg">
+<div class="bg-surface-container-lowest rounded-xl p-lg shadow-[0px_4px_20px_rgba(26,54,93,0.05)] border border-outline-variant/10">
+<div class="flex items-center justify-between mb-lg">
+<h3 class="font-h3 text-h3 text-primary">Quick Actions</h3>
+</div>
+<div class="grid grid-cols-2 gap-sm">
+<button class="flex flex-col items-center justify-center p-md bg-surface-container-low rounded-lg shadow-sm hover:scale-[0.98] transition-transform">
+<span class="material-symbols-outlined text-primary mb-xs" data-icon="edit_calendar">edit_calendar</span>
+<span class="font-label-md text-[12px]">Edit Schedule</span>
+</button>
+<button class="flex flex-col items-center justify-center p-md bg-surface-container-low rounded-lg shadow-sm hover:scale-[0.98] transition-transform">
+<span class="material-symbols-outlined text-primary mb-xs" data-icon="description">description</span>
+<span class="font-label-md text-[12px]">Reports</span>
+</button>
+</div>
+</div>
+<div class="bg-surface-container rounded-xl p-lg border border-primary-fixed/20">
+<h4 class="font-label-md text-label-md text-primary mb-md">Mass Reminders</h4>
+<div class="space-y-sm">
+<div class="flex items-center gap-sm">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<p class="font-body-sm text-body-sm">Finalize weekend schedule</p>
+</div>
+<div class="flex items-center gap-sm">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<p class="font-body-sm text-body-sm">Upload weekly bulletin</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Priest Schedule View -->
+<div class="lg:col-span-8 bg-surface-container-lowest rounded-xl p-lg shadow-[0px_4px_20px_rgba(26,54,93,0.05)] border border-outline-variant/10">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-md mb-xl">
+<div>
+<h3 class="font-h2 text-h2 text-primary">Priest Schedule</h3>
+<p class="font-body-sm text-body-sm text-secondary">October 2023</p>
+</div>
+<div class="flex items-center gap-sm">
+<div class="flex bg-surface-container-low p-xs rounded-lg">
+<button class="px-md py-xs bg-white text-primary rounded-md shadow-sm font-label-md text-label-md">Week</button>
+<button class="px-md py-xs text-secondary font-label-md text-label-md">Month</button>
+</div>
+<div class="flex gap-xs">
+<button class="p-xs bg-surface-container-low hover:bg-surface-container-high rounded-lg transition-colors"><span class="material-symbols-outlined text-primary" data-icon="chevron_left">chevron_left</span></button>
+<button class="p-xs bg-surface-container-low hover:bg-surface-container-high rounded-lg transition-colors"><span class="material-symbols-outlined text-primary" data-icon="chevron_right">chevron_right</span></button>
+</div>
+</div>
+</div>
+<!-- Custom Grid Calendar -->
+<div class="grid grid-cols-7 gap-xs mb-md">
+<div class="text-center font-label-md text-label-md text-outline py-sm">MON</div>
+<div class="text-center font-label-md text-label-md text-outline py-sm">TUE</div>
+<div class="text-center font-label-md text-label-md text-outline py-sm">WED</div>
+<div class="text-center font-label-md text-label-md text-outline py-sm">THU</div>
+<div class="text-center font-label-md text-label-md text-outline py-sm">FRI</div>
+<div class="text-center font-label-md text-label-md text-primary font-bold py-sm">SAT</div>
+<div class="text-center font-label-md text-label-md text-primary font-bold py-sm">SUN</div>
+</div>
+<div class="grid grid-cols-7 gap-xs h-[400px]">
+<div class="bg-surface-bright rounded-lg p-xs border border-outline-variant/20 opacity-50"><p class="font-label-md text-[12px]">25</p></div>
+<div class="bg-surface-bright rounded-lg p-xs border border-outline-variant/20 opacity-50"><p class="font-label-md text-[12px]">26</p></div>
+<div class="bg-surface-bright rounded-lg p-xs border border-outline-variant/20 opacity-50"><p class="font-label-md text-[12px]">27</p></div>
+<div class="bg-surface-bright rounded-lg p-xs border border-outline-variant/20 opacity-50"><p class="font-label-md text-[12px]">28</p></div>
+<div class="bg-surface-bright rounded-lg p-xs border border-outline-variant/20 opacity-50"><p class="font-label-md text-[12px]">29</p></div>
+<div class="bg-surface-bright rounded-lg p-xs border border-outline-variant/20 opacity-50"><p class="font-label-md text-[12px]">30</p></div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 ring-1 ring-primary-fixed ring-inset relative">
+<p class="font-label-md text-[12px] text-primary font-bold">1</p>
+<div class="mt-xs space-y-1">
+<div class="h-1 bg-primary rounded-full"></div>
+<div class="h-1 bg-on-tertiary-container rounded-full"></div>
+</div>
+</div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">2</p></div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">3</p></div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer">
+<p class="font-label-md text-[12px]">4</p>
+<div class="mt-xs bg-primary-fixed text-on-primary-fixed text-[10px] px-xs py-[2px] rounded truncate">Diocese Meet</div>
+</div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">5</p></div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">6</p></div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer">
+<p class="font-label-md text-[12px]">7</p>
+<div class="mt-xs bg-surface-container text-primary text-[10px] px-xs py-[2px] rounded truncate">3 Weddings</div>
+</div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">8</p></div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">9</p></div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">10</p></div>
+<div class="bg-primary text-white rounded-lg p-xs border border-primary relative shadow-md">
+<p class="font-label-md text-[12px] font-bold">11</p>
+<div class="absolute bottom-2 left-2 right-2">
+<p class="text-[9px] font-bold opacity-80">TODAY</p>
+</div>
+</div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">12</p></div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">13</p></div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">14</p></div>
+<div class="bg-white rounded-lg p-xs border border-outline-variant/40 hover:bg-surface-container-low transition-colors cursor-pointer"><p class="font-label-md text-[12px]">15</p></div>
+</div>
+</div>
+</section>
+</main>
+</div>
+<!-- Mobile Navigation Shell (Bottom) -->
+<nav class="md:hidden fixed bottom-0 left-0 right-0 bg-surface dark:bg-on-background shadow-[0px_-4px_20px_rgba(26,54,93,0.05)] px-lg py-sm flex justify-around items-center z-50">
+<a class="flex flex-col items-center text-primary" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-[10px]">Home</span>
+</a>
+<a class="flex flex-col items-center text-secondary" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_month">calendar_month</span>
+<span class="font-label-md text-[10px]">Events</span>
+</a>
+<div class="bg-primary p-md rounded-full -mt-lg shadow-lg">
+<span class="material-symbols-outlined text-white" data-icon="add">add</span>
+</div>
+<a class="flex flex-col items-center text-secondary" href="#">
+<span class="material-symbols-outlined" data-icon="church">church</span>
+<span class="font-label-md text-[10px]">Mass</span>
+</a>
+<a class="flex flex-col items-center text-secondary" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-[10px]">Settings</span>
+</a>
+</nav>
+</body></html>
