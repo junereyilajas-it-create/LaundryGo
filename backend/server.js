@@ -27,15 +27,19 @@ app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/logistics', require('./routes/logisticsRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
+app.use('/api/messages', require('./routes/messageRoutes'));
+app.use('/api/reports', require('./routes/reportRoutes'));
+app.use('/api/activities', require('./routes/activityRoutes'));
 
-// Basic route for testing
+// Basic health check route
 app.get('/api/health', async (req, res) => {
     try {
         await db.query('SELECT 1');
         res.json({
             status: 'ok',
             database: 'connected',
-            databaseName: process.env.DB_NAME || 'laundrigo_db'
+            databaseName: process.env.DB_NAME || 'laundrigo_db',
+            service_area: 'Poblacion, Lagonglong, Misamis Oriental, Philippines'
         });
     } catch (error) {
         res.status(500).json({
@@ -52,10 +56,91 @@ app.use((err, req, res, next) => {
     res.status(500).json({ message: 'Something went wrong!', error: err.message });
 });
 
+// Auto-run schema checks on server launch
+async function ensureDatabaseSchema() {
+    try {
+        const [tableCheck] = await db.query(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_name = 'password_resets'",
+            [process.env.DB_NAME || 'laundrigo_db']
+        );
+
+        if (tableCheck.length === 0) {
+            console.log('Applying database schema updates...');
+            // 1. Password resets table
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS password_resets (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    email VARCHAR(255) NOT NULL,
+                    token VARCHAR(255) NOT NULL,
+                    expires_at DATETIME NOT NULL,
+                    used TINYINT(1) DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_token (token),
+                    INDEX idx_email (email)
+                )
+            `);
+        }
+
+        // 2. Order messages table
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS order_messages (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                order_id INT NOT NULL,
+                sender_id INT NOT NULL,
+                message TEXT NOT NULL,
+                is_read TINYINT(1) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (order_id) REFERENCES laundry_orders(id) ON DELETE CASCADE,
+                FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        `);
+
+        // 3. Services table
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS services (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                price DECIMAL(10,2) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        `);
+
+        // 4. Seed initial services if empty
+        const [servicesCount] = await db.query('SELECT COUNT(*) as count FROM services');
+        if (servicesCount[0].count === 0) {
+            const initialServices = [
+                ['Wash & Fold', 'Regular washing, tumble drying, and neat folding for everyday laundry.', 35.00],
+                ['Wash & Iron / Press', 'Washed, dried, and professionally steam ironed on hangers or neatly folded.', 50.00],
+                ['Dry Cleaning', 'Delicate dry cleaning treatment for suits, barongs, gowns, and coats.', 120.00],
+                ['Comforter & Heavy Blanket', 'Deep hygiene cleaning for heavy duvets, comforters, and quilts.', 150.00],
+                ['Shoe & Bag Refresh', 'Specialized gentle scrubbing and stain removal for sneakers and canvas bags.', 90.00]
+            ];
+            for (const s of initialServices) {
+                await db.query('INSERT INTO services (name, description, price) VALUES (?, ?, ?)', s);
+            }
+        }
+
+        // 5. Verify single admin and driver approval schema
+        const seedAdminAndApprovalSchema = require('./seed_admin');
+        await seedAdminAndApprovalSchema();
+
+        // 6. Ensure activity logs and location columns
+        const migrateActivityLogs = require('./migrations/migrate_activity_logs');
+        await migrateActivityLogs();
+
+        console.log('✓ Database schema verified and synchronized.');
+    } catch (err) {
+        console.warn('Notice: Non-critical schema synchronization warning:', err.message);
+    }
+}
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
     console.log('\n================================');
-    console.log('LaundriGo Backend');
+    console.log('LaundriGo Backend API');
+    console.log('Serving Poblacion, Lagonglong, Misamis Oriental');
     console.log('================================');
     console.log(`Server running on port ${PORT}`);
     
@@ -65,16 +150,13 @@ app.listen(PORT, async () => {
         console.log(`Database: ${process.env.DB_NAME || 'laundrigo_db'}`);
         console.log('================================\n');
         connection.release();
+        await ensureDatabaseSchema();
     } catch (error) {
         console.error('\nMySQL connection failed.\n');
         console.error('Check:');
-        console.error('1. Laragon is running');
-        console.error('2. MySQL is running');
-        console.error(`3. Database ${process.env.DB_NAME || 'laundrigo_db'} exists`);
-        console.error('4. DB_HOST is correct');
-        console.error('5. DB_PORT is correct');
-        console.error('6. DB_USER is correct');
-        console.error('7. DB_PASSWORD is correct');
+        console.error('1. Laragon / MySQL is running');
+        console.error(`2. Database ${process.env.DB_NAME || 'laundrigo_db'} exists`);
+        console.error('3. Credentials in backend/.env are correct');
         console.log('================================\n');
     }
 });

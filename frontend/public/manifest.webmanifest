@@ -1,0 +1,20 @@
+{
+  "name": "LaundriGo - Laundry Management & Delivery",
+  "short_name": "LaundriGo",
+  "description": "Premium laundry management and delivery service serving Poblacion, Lagonglong, Misamis Oriental, Philippines.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8f9ff",
+  "theme_color": "#002045",
+  "lang": "en-US",
+  "categories": ["lifestyle", "business", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "48x48 72x72 96x96 128x128 192x192 256x256 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

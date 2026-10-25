@@ -1,20 +1,39 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/orderController');
-const { authenticateToken, authorizeRole } = require('../middleware/auth');
+const { authenticateToken, authorizeRole, authorizeApprovedDriver } = require('../middleware/auth');
 
-router.post('/', authenticateToken, authorizeRole('customer'), orderController.createOrder);
-router.get('/', authenticateToken, orderController.getOrders);
-router.get('/:id', authenticateToken, orderController.getOrderById);
+router.use(authenticateToken);
+router.use(authorizeApprovedDriver);
 
-// Update status (worker/admin)
-router.put('/:id/status', authenticateToken, authorizeRole('worker', 'admin'), orderController.updateOrderStatus);
+// Create order (Customer)
+router.post('/', authorizeRole('customer'), orderController.createOrder);
 
-// Customer request delivery
-router.post('/:id/delivery', authenticateToken, authorizeRole('customer'), orderController.requestDelivery);
+// Workflow counts and available drivers for assignment
+router.get('/workflow/counts', authorizeRole('worker', 'admin'), orderController.getWorkflowCounts);
+router.get('/drivers/available', authorizeRole('worker', 'admin'), orderController.getAvailableDrivers);
 
-// Full CRUD (Admin)
-router.put('/:id', authenticateToken, authorizeRole('worker', 'admin'), orderController.updateOrder);
-router.delete('/:id', authenticateToken, authorizeRole('admin'), orderController.deleteOrder);
+// Listing & Single Details
+router.get('/', orderController.getOrders);
+router.get('/:id', orderController.getOrderById);
+
+// WORKER WORKFLOW ENDPOINTS
+router.put('/:id/approve', authorizeRole('worker', 'admin'), orderController.approveOrder);
+router.put('/:id/reject', authorizeRole('worker', 'admin'), orderController.rejectOrder);
+router.put('/:id/assign-driver', authorizeRole('worker', 'admin'), orderController.assignDriver);
+router.put('/:id/confirm-receipt', authorizeRole('worker', 'admin'), orderController.confirmLaundryReceipt);
+router.post('/:id/record-weight', authorizeRole('worker', 'admin'), orderController.recordLaundryWeight);
+router.put('/:id/send-price', authorizeRole('worker', 'admin'), orderController.sendPriceToCustomer);
+router.put('/:id/processing-stage', authorizeRole('worker', 'admin'), orderController.updateProcessingStage);
+
+// CUSTOMER WORKFLOW ENDPOINTS
+router.put('/:id/customer-weight-decision', authorizeRole('customer'), orderController.customerWeightDecision);
+router.put('/:id/cancel', authorizeRole('customer', 'worker', 'admin'), orderController.cancelOrder);
+router.post('/:id/delivery', authorizeRole('customer'), orderController.requestDelivery);
+
+// Generic Status Update & Full CRUD
+router.put('/:id/status', authorizeRole('worker', 'admin'), orderController.updateOrderStatus);
+router.put('/:id', authorizeRole('worker', 'admin'), orderController.updateOrder);
+router.delete('/:id', authorizeRole('admin'), orderController.deleteOrder);
 
 module.exports = router;

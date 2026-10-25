@@ -1,10 +1,100 @@
 const db = require('../config/db');
+const { calculateLaundryPricing } = require('../utils/pricingCalculator');
+const { logActivity } = require('../utils/activityLogger');
 
-// Create a new laundry order (Customer)
+// 1. Create a new laundry order (Customer) - supports COD and standard request
 const createOrder = async (req, res) => {
     try {
-        const { service_type, estimated_weight, preferred_date, preferred_time, special_instructions, address_id } = req.body;
+        const { 
+            service_name,
+            estimated_weight, 
+            preferred_date, 
+            preferred_time, 
+            special_instructions, 
+            address_id,
+            pickup_address_text,
+            delivery_address_text,
+            pickup_latitude,
+            pickup_longitude,
+            delivery_latitude,
+            delivery_longitude,
+            payment_method
+        } = req.body;
+        
         const customer_id = req.user.id;
+        const sType = 'shop_pickup';
+        const sName = service_name || 'Wash & Fold';
+
+        // Validate estimated weight strictly
+        const numericWeight = parseFloat(estimated_weight);
+        if (isNaN(numericWeight) || numericWeight <= 0) {
+            return res.status(400).json({ message: 'A valid estimated weight greater than zero is required.' });
+        }
+        if (numericWeight > 100) {
+            return res.status(400).json({ message: 'Estimated laundry weight cannot exceed 100 kg in a single request.' });
+        }
+
+        // Authoritative backend package pricing calculation
+        const pricing = calculateLaundryPricing(numericWeight);
+        const calcAmount = pricing.totalAmount;
+        const loadCount = pricing.loadCount;
+        const loadDetails = JSON.stringify(pricing.loads);
+
+        // Parse and validate numeric geographic coordinates
+        let pLat = pickup_latitude !== undefined && pickup_latitude !== null && pickup_latitude !== '' ? parseFloat(pickup_latitude) : 8.8105;
+        let pLng = pickup_longitude !== undefined && pickup_longitude !== null && pickup_longitude !== '' ? parseFloat(pickup_longitude) : 124.7925;
+        if (isNaN(pLat) || pLat < -90 || pLat > 90) pLat = 8.8105;
+        if (isNaN(pLng) || pLng < -180 || pLng > 180) pLng = 124.7925;
+
+        let dLat = delivery_latitude !== undefined && delivery_latitude !== null && delivery_latitude !== '' ? parseFloat(delivery_latitude) : pLat;
+        let dLng = delivery_longitude !== undefined && delivery_longitude !== null && delivery_longitude !== '' ? parseFloat(delivery_longitude) : pLng;
+        if (isNaN(dLat) || dLat < -90 || dLat > 90) dLat = pLat;
+        if (isNaN(dLng) || dLng < -180 || dLng > 180) dLng = pLng;
+
+        const pAddress = pickup_address_text ? pickup_address_text.trim() : 'Poblacion, Lagonglong, Misamis Oriental, 9006 Philippines';
+        const dAddress = delivery_address_text ? delivery_address_text.trim() : pAddress;
+
+        // Normalized payment method and status
+        let pMethod = 'COD';
+        let pStatus = 'Pending';
+
+        if (payment_method) {
+            const pmUpper = payment_method.toUpperCase();
+            if (pmUpper === 'GCASH_DEMO' || pmUpper === 'GCASH') {
+                pMethod = 'GCASH_DEMO';
+                pStatus = 'Paid (Demo)';
+            } else {
+                pMethod = 'COD';
+                pStatus = 'Pending';
+            }
+        }
+
+        // Idempotency: prevent accidental duplicate submission within 10 seconds for same customer/details
+        const [recentOrders] = await db.query(
+            `SELECT id, order_number, total_amount, estimated_amount, load_count, status, payment_method, payment_status 
+             FROM laundry_orders 
+             WHERE customer_id = ? 
+               AND service_name = ? 
+               AND total_amount = ? 
+               AND created_at >= (NOW() - INTERVAL 10 SECOND)
+             ORDER BY id DESC LIMIT 1`,
+            [customer_id, sName, calcAmount]
+        );
+
+        if (recentOrders.length > 0) {
+            return res.status(200).json({
+                message: 'Laundry request confirmed (duplicate submission prevented).',
+                orderId: recentOrders[0].id,
+                order_number: recentOrders[0].order_number,
+                total_amount: recentOrders[0].total_amount,
+                estimated_amount: recentOrders[0].estimated_amount || recentOrders[0].total_amount,
+                load_count: recentOrders[0].load_count || loadCount,
+                load_details: pricing.loads,
+                payment_method: recentOrders[0].payment_method,
+                payment_status: recentOrders[0].payment_status,
+                status: recentOrders[0].status
+            });
+        }
         
         // Generate a unique order number LAU-YYYY-XXXXX
         const year = new Date().getFullYear();
@@ -12,57 +102,154 @@ const createOrder = async (req, res) => {
         const nextId = (lastOrder.length > 0 ? lastOrder[0].id : 0) + 1;
         const order_number = `LAU-${year}-${String(nextId).padStart(5, '0')}`;
 
-        // The exact service_type must be 'customer_dropoff' or 'shop_pickup'
-        const sType = service_type === 'PICKUP' ? 'shop_pickup' : 'customer_dropoff';
+        // Initial order status per workflow requirement: "Pending Approval"
+        const initialStatus = 'Pending Approval';
 
         const [result] = await db.query(
             `INSERT INTO laundry_orders 
-            (order_number, customer_id, service_type, estimated_weight, preferred_date, preferred_time, special_instructions) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [order_number, customer_id, sType, estimated_weight, preferred_date, preferred_time, special_instructions]
+            (order_number, customer_id, service_type, service_name, estimated_weight, total_amount, estimated_amount, load_count, load_details, pricing_version, preferred_date, preferred_time, special_instructions, pickup_address_text, delivery_address_text, pickup_latitude, pickup_longitude, delivery_latitude, delivery_longitude, payment_method, status, payment_status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                order_number, 
+                customer_id, 
+                sType, 
+                sName, 
+                pricing.measuredWeight, 
+                calcAmount,
+                calcAmount,
+                loadCount,
+                loadDetails,
+                pricing.pricingVersion,
+                preferred_date || new Date().toISOString().split('T')[0], 
+                preferred_time || 'Afternoon', 
+                special_instructions || '',
+                pAddress,
+                dAddress,
+                pLat,
+                pLng,
+                dLat,
+                dLng,
+                pMethod,
+                initialStatus,
+                pStatus
+            ]
         );
         
         const orderId = result.insertId;
 
-        // If Pickup, create a pending pickup request
-        if (sType === 'shop_pickup') {
+        // Create a pending pickup request with confirmed coordinates
+        await db.query(
+            'INSERT INTO pickup_requests (order_id, customer_id, status, pickup_date, pickup_time, address_id, notes, pickup_latitude, pickup_longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [orderId, customer_id, 'pending', preferred_date, preferred_time, address_id || null, pAddress, pLat, pLng]
+        );
+
+        // Add history entry
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+            [orderId, initialStatus, `Order placed by customer (${loadCount} load(s), estimated ₱${calcAmount.toFixed(2)}) with Doorstep Pickup (${pMethod} - ${pStatus})`, customer_id]
+        );
+
+        // Centralized Activity Logging
+        await logActivity({
+            req,
+            actorId: customer_id,
+            actorName: req.user.name,
+            actorRole: 'customer',
+            actionType: 'order_created',
+            description: `New laundry request ${order_number} submitted (${sName}, ${pricing.measuredWeight} kg, ${loadCount} load(s) @ ₱${calcAmount.toFixed(2)})`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: {
+                order_number,
+                service_name: sName,
+                weight: pricing.measuredWeight,
+                load_count: loadCount,
+                loads: pricing.loads,
+                total_amount: calcAmount,
+                payment_method: pMethod
+            }
+        });
+
+        // Add initial notification for customer
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
+            [
+                customer_id, 
+                orderId, 
+                'Laundry Request Submitted', 
+                `Your laundry order ${order_number} has been submitted successfully and is Pending Approval.`
+            ]
+        );
+
+        // Notify all workers/admins about the new order
+        const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
+        for (const worker of staff) {
             await db.query(
-                'INSERT INTO pickup_requests (order_id, customer_id, status, pickup_date, pickup_time, address_id) VALUES (?, ?, ?, ?, ?, ?)',
-                [orderId, customer_id, 'pending', preferred_date, preferred_time, address_id || null]
+                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
+                [
+                    worker.id,
+                    orderId,
+                    'New Order Received',
+                    `New order ${order_number} (${pMethod}, ${loadCount} load(s), ₱${calcAmount.toFixed(2)}) submitted by customer. Awaiting approval.`
+                ]
             );
         }
 
-        // Add history
-        await db.query(
-            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
-            [orderId, 'Pending Request', 'Order placed by customer', customer_id]
-        );
-
-        // Add notification
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-            [customer_id, orderId, 'Request Submitted', `Your laundry ${sType === 'shop_pickup' ? 'pickup' : 'drop-off'} request ${order_number} has been submitted.`]
-        );
-
-        res.status(201).json({ message: 'Order created successfully', orderId, order_number });
+        res.status(201).json({ 
+            message: 'Order created successfully', 
+            orderId, 
+            order_number,
+            total_amount: calcAmount,
+            estimated_amount: calcAmount,
+            load_count: loadCount,
+            load_details: pricing.loads,
+            payment_method: pMethod,
+            payment_status: pStatus,
+            status: initialStatus
+        });
     } catch (error) {
+        console.error('Error creating order:', error);
         res.status(500).json({ message: 'Error creating order', error: error.message });
     }
 };
 
-// Get all orders (Worker/Admin) or Customer's orders
+// 2. Get all orders (Worker/Admin sees all, Customer sees their own, Driver sees assigned)
 const getOrders = async (req, res) => {
     try {
         let query = `
-            SELECT lo.*, u.name as customer_name, u.phone as customer_phone
+            SELECT lo.*, 
+                   COALESCE(lo.pickup_address_text, '') as pickup_address,
+                   COALESCE(lo.delivery_address_text, '') as delivery_address,
+                   u.name as customer_name, 
+                   u.phone as customer_phone,
+                   u.email as customer_email,
+                   p.id as pickup_id,
+                   p.status as pickup_status,
+                   p.driver_id as pickup_driver_id,
+                   pu.name as pickup_driver_name,
+                   pu.phone as pickup_driver_phone,
+                   d.id as delivery_id,
+                   d.status as delivery_status,
+                   d.driver_id as delivery_driver_id,
+                   du.name as delivery_driver_name,
+                   du.phone as delivery_driver_phone,
+                   (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE order_id = lo.id AND (payment_status = 'paid' OR payment_status = 'Paid (Demo)')) as total_paid
             FROM laundry_orders lo
             JOIN users u ON lo.customer_id = u.id
+            LEFT JOIN pickup_requests p ON lo.id = p.order_id
+            LEFT JOIN users pu ON COALESCE(lo.assigned_pickup_driver_id, p.driver_id) = pu.id
+            LEFT JOIN delivery_requests d ON lo.id = d.order_id
+            LEFT JOIN users du ON COALESCE(lo.assigned_delivery_driver_id, d.driver_id) = du.id
         `;
         let params = [];
 
         if (req.user.role === 'customer') {
             query += ' WHERE lo.customer_id = ?';
             params.push(req.user.id);
+        } else if (req.user.role === 'driver') {
+            query += ' WHERE p.driver_id = ? OR d.driver_id = ? OR lo.assigned_pickup_driver_id = ? OR lo.assigned_delivery_driver_id = ?';
+            params.push(req.user.id, req.user.id, req.user.id, req.user.id);
         }
         
         query += ' ORDER BY lo.created_at DESC';
@@ -70,19 +257,51 @@ const getOrders = async (req, res) => {
         const [orders] = await db.query(query, params);
         res.json(orders);
     } catch (error) {
+        console.error('Error fetching orders:', error);
         res.status(500).json({ message: 'Error fetching orders', error: error.message });
     }
 };
 
-// Get single order details
+// 3. Get single order details with full history, logistics & payments
 const getOrderById = async (req, res) => {
     try {
         const orderId = req.params.id;
         
         const [orders] = await db.query(`
-            SELECT lo.*, u.name as customer_name, u.phone as customer_phone
+            SELECT lo.*, 
+                   COALESCE(lo.pickup_address_text, '') as pickup_address,
+                   COALESCE(lo.delivery_address_text, '') as delivery_address,
+                   u.name as customer_name, 
+                   u.phone as customer_phone,
+                   u.email as customer_email,
+                   p.id as pickup_id,
+                   p.status as pickup_status,
+                   p.driver_id as pickup_driver_id,
+                   pu.name as pickup_driver_name,
+                   pu.phone as pickup_driver_phone,
+                   pu.latitude as pickup_driver_lat,
+                   pu.longitude as pickup_driver_lng,
+                   d.id as delivery_id,
+                   d.status as delivery_status,
+                   d.driver_id as delivery_driver_id,
+                   du.name as delivery_driver_name,
+                   du.phone as delivery_driver_phone,
+                   du.latitude as delivery_driver_lat,
+                   du.longitude as delivery_driver_lng,
+                   app_u.name as approver_name,
+                   pcu.name as pickup_confirmer_name,
+                   dcu.name as delivery_confirmer_name,
+                   wcu.name as weight_recorder_name
             FROM laundry_orders lo
             JOIN users u ON lo.customer_id = u.id
+            LEFT JOIN pickup_requests p ON lo.id = p.order_id
+            LEFT JOIN users pu ON COALESCE(lo.assigned_pickup_driver_id, p.driver_id) = pu.id
+            LEFT JOIN delivery_requests d ON lo.id = d.order_id
+            LEFT JOIN users du ON COALESCE(lo.assigned_delivery_driver_id, d.driver_id) = du.id
+            LEFT JOIN users app_u ON lo.approved_by = app_u.id
+            LEFT JOIN users pcu ON lo.pickup_confirmed_by = pcu.id
+            LEFT JOIN users dcu ON lo.delivery_confirmed_by = dcu.id
+            LEFT JOIN users wcu ON lo.weight_recorded_by = wcu.id
             WHERE lo.id = ?
         `, [orderId]);
         
@@ -90,103 +309,916 @@ const getOrderById = async (req, res) => {
         
         const order = orders[0];
 
-        // Check auth
+        // Check customer authorization
         if (req.user.role === 'customer' && order.customer_id !== req.user.id) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
-        // Fetch histories
-        const [histories] = await db.query('SELECT * FROM laundry_status_history WHERE order_id = ? ORDER BY created_at DESC', [orderId]);
+        // Fetch audit history
+        const [histories] = await db.query(
+            `SELECT h.*, u.name as changed_by_name, u.role as changed_by_role
+             FROM laundry_status_history h
+             LEFT JOIN users u ON h.changed_by = u.id
+             WHERE h.order_id = ?
+             ORDER BY h.created_at DESC`,
+            [orderId]
+        );
+
+        // Fetch payments
+        const [payments] = await db.query(
+            'SELECT * FROM payments WHERE order_id = ? ORDER BY created_at DESC',
+            [orderId]
+        );
+
+        // Parse load_details if string
+        if (order.load_details && typeof order.load_details === 'string') {
+            try {
+                order.load_details = JSON.parse(order.load_details);
+            } catch (e) {}
+        }
         
-        res.json({ ...order, history: histories });
+        res.json({ ...order, history: histories, payments });
     } catch (error) {
+        console.error('Error fetching order details:', error);
         res.status(500).json({ message: 'Error fetching order details', error: error.message });
     }
 };
 
-// Update order status (Worker)
-const updateOrderStatus = async (req, res) => {
+// 4. Worker: Approve Request
+const approveOrder = async (req, res) => {
     try {
         const orderId = req.params.id;
-        const { status, notes } = req.body;
-        const userId = req.user.id;
+        const workerId = req.user.id;
 
-        await db.query('UPDATE laundry_orders SET status = ? WHERE id = ?', [status, orderId]);
-        
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        if (order.status !== 'Pending Approval' && order.status !== 'Pending Request') {
+            return res.status(400).json({ message: `Cannot approve order currently in '${order.status}' status.` });
+        }
+
+        // Transition to Approved (Awaiting Pickup Assignment for Doorstep Pickup)
+        const nextStatus = 'Awaiting Pickup Assignment';
+
+        await db.query('UPDATE laundry_orders SET status = ?, approved_by = ?, approved_at = NOW() WHERE id = ?', [nextStatus, workerId, orderId]);
+
+        // Audit status history
         await db.query(
             'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
-            [orderId, status, notes, userId]
+            [orderId, nextStatus, 'Request approved by laundry staff. Queued for pickup/dropoff.', workerId]
         );
 
-        // Fetch customer id and order number for notification
-        const [orders] = await db.query('SELECT customer_id, order_number FROM laundry_orders WHERE id = ?', [orderId]);
-        const { customer_id, order_number } = orders[0];
+        // Notify customer
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Order Approved", ?)',
+            [
+                order.customer_id,
+                orderId,
+                `Your laundry request ${order.order_number} has been approved and is being arranged for pickup.`
+            ]
+        );
 
-        let title = 'Order Update';
-        let message = `Your laundry order ${order_number} status is now ${status}.`;
+        await logActivity({
+            req,
+            actorId: workerId,
+            actorName: req.user.name,
+            actorRole: req.user.role,
+            actionType: 'order_approved',
+            description: `Approved laundry order ${order.order_number}`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success'
+        });
 
-        // If Ready, notify customer
-        if (status === 'Ready') {
-            title = 'Laundry Ready';
-            message = `Your laundry order ${order_number} is finished and ready for pickup or delivery.`;
-        } else if (status === 'Completed') {
-            title = 'Order Completed';
-            message = `Your laundry order ${order_number} has been completed. Thank you for using LaundriGo!`;
-        } 
+        res.json({ message: 'Order approved successfully', status: nextStatus });
+    } catch (error) {
+        console.error('Error approving order:', error);
+        res.status(500).json({ message: 'Error approving order', error: error.message });
+    }
+};
+
+// 5. Worker: Reject Request
+const rejectOrder = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const { rejection_reason } = req.body;
+        const workerId = req.user.id;
+
+        if (!rejection_reason) {
+            return res.status(400).json({ message: 'A rejection reason is required.' });
+        }
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        await db.query(
+            'UPDATE laundry_orders SET status = "Cancelled", rejection_reason = ? WHERE id = ?',
+            [rejection_reason, orderId]
+        );
+
+        await db.query('UPDATE pickup_requests SET status = "cancelled" WHERE order_id = ?', [orderId]);
+
+        // Audit status history
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, "Cancelled", ?, ?)',
+            [orderId, `Request rejected: ${rejection_reason}`, workerId]
+        );
+
+        // Notify customer
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Order Request Declined", ?)',
+            [
+                order.customer_id,
+                orderId,
+                `Your laundry request ${order.order_number} could not be accepted: ${rejection_reason}`
+            ]
+        );
+
+        await logActivity({
+            req,
+            actorId: workerId,
+            actorName: req.user.name,
+            actorRole: req.user.role,
+            actionType: 'order_rejected',
+            description: `Rejected laundry order ${order.order_number}. Reason: ${rejection_reason}`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'failure',
+            metadata: { reason: rejection_reason }
+        });
+
+        res.json({ message: 'Order rejected', status: 'Cancelled' });
+    } catch (error) {
+        console.error('Error rejecting order:', error);
+        res.status(500).json({ message: 'Error rejecting order', error: error.message });
+    }
+};
+
+// 6. Worker: Assign Driver (Pickup or Delivery)
+const assignDriver = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const { driver_id, task_type } = req.body; // task_type: 'pickup' | 'delivery'
+        const workerId = req.user.id;
+
+        if (!driver_id) {
+            return res.status(400).json({ message: 'Please select a driver to assign.' });
+        }
+
+        // Verify driver exists and is active & approved
+        const [drivers] = await db.query(
+            'SELECT id, name, phone, is_active, approval_status FROM users WHERE id = ? AND role = "driver"',
+            [driver_id]
+        );
+        if (drivers.length === 0) {
+            return res.status(404).json({ message: 'Driver not found.' });
+        }
+        if (!drivers[0].is_active || drivers[0].approval_status !== 'approved') {
+            return res.status(400).json({ message: 'Selected driver account is not approved or is inactive and cannot receive new assignments.' });
+        }
+
+        const driver = drivers[0];
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        const isDelivery = (task_type === 'delivery' || order.status === 'Ready for Delivery');
+
+        if (isDelivery) {
+            // Assign delivery driver
+            await db.query('UPDATE laundry_orders SET assigned_delivery_driver_id = ?, status = "Delivery Assigned" WHERE id = ?', [driver_id, orderId]);
+
+            const [existDelivery] = await db.query('SELECT id FROM delivery_requests WHERE order_id = ?', [orderId]);
+            if (existDelivery.length > 0) {
+                await db.query('UPDATE delivery_requests SET driver_id = ?, status = "assigned" WHERE order_id = ?', [driver_id, orderId]);
+            } else {
+                await db.query(
+                    'INSERT INTO delivery_requests (order_id, customer_id, driver_id, status, delivery_date, delivery_time, notes) VALUES (?, ?, ?, "assigned", CURDATE(), "Afternoon", ?)',
+                    [orderId, order.customer_id, driver_id, order.delivery_address_text || '']
+                );
+            }
+
+            await db.query(
+                'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, "Delivery Assigned", ?, ?)',
+                [orderId, `Delivery assigned to driver ${driver.name}`, workerId]
+            );
+
+            // Notify driver
+            await db.query(
+                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Delivery Task Assigned", ?)',
+                [driver_id, orderId, `You have been assigned delivery task for order ${order.order_number}. Destination: ${order.delivery_address_text || 'Poblacion, Lagonglong'}.`]
+            );
+
+            // Notify customer
+            await db.query(
+                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Delivery Driver Assigned", ?)',
+                [order.customer_id, orderId, `Driver ${driver.name} has been assigned to deliver your clean laundry.`]
+            );
+
+            await logActivity({
+                req,
+                actorId: workerId,
+                actorName: req.user.name,
+                actorRole: req.user.role,
+                actionType: 'delivery_driver_assigned',
+                description: `Delivery assigned to driver ${driver.name} for order ${order.order_number}`,
+                entityType: 'order',
+                entityId: orderId,
+                outcome: 'success',
+                metadata: { driver_id, driver_name: driver.name, task_type: 'delivery' }
+            });
+
+            return res.json({ message: `Delivery driver ${driver.name} assigned successfully.`, status: 'Delivery Assigned' });
+        } else {
+            // Assign pickup driver
+            await db.query('UPDATE laundry_orders SET assigned_pickup_driver_id = ?, status = "Driver Assigned" WHERE id = ?', [driver_id, orderId]);
+
+            const [existPickup] = await db.query('SELECT id FROM pickup_requests WHERE order_id = ?', [orderId]);
+            if (existPickup.length > 0) {
+                await db.query('UPDATE pickup_requests SET driver_id = ?, status = "assigned" WHERE order_id = ?', [driver_id, orderId]);
+            } else {
+                await db.query(
+                    'INSERT INTO pickup_requests (order_id, customer_id, driver_id, status, pickup_date, pickup_time, notes) VALUES (?, ?, ?, "assigned", CURDATE(), "Afternoon", ?)',
+                    [orderId, order.customer_id, driver_id, order.pickup_address_text || '']
+                );
+            }
+
+            await db.query(
+                'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, "Driver Assigned", ?, ?)',
+                [orderId, `Pickup assigned to driver ${driver.name}`, workerId]
+            );
+
+            // Notify driver
+            await db.query(
+                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "New Pickup Task Assigned", ?)',
+                [driver_id, orderId, `You have been assigned pickup task for order ${order.order_number}. Address: ${order.pickup_address_text || 'Poblacion, Lagonglong'}.`]
+            );
+
+            // Notify customer
+            await db.query(
+                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Pickup Driver Assigned", ?)',
+                [
+                    order.customer_id, 
+                    orderId, 
+                    `Your laundry request has been approved, and driver ${driver.name} has been assigned for pickup. Please wait for the driver to update their status.`
+                ]
+            );
+
+            await logActivity({
+                req,
+                actorId: workerId,
+                actorName: req.user.name,
+                actorRole: req.user.role,
+                actionType: 'pickup_driver_assigned',
+                description: `Pickup assigned to driver ${driver.name} for order ${order.order_number}`,
+                entityType: 'order',
+                entityId: orderId,
+                outcome: 'success',
+                metadata: { driver_id, driver_name: driver.name, task_type: 'pickup' }
+            });
+
+            return res.json({ message: `Pickup driver ${driver.name} assigned successfully.`, status: 'Driver Assigned' });
+        }
+    } catch (error) {
+        console.error('Error assigning driver:', error);
+        res.status(500).json({ message: 'Error assigning driver', error: error.message });
+    }
+};
+
+// 7. Worker: Explicitly Confirm Physical Receipt of Laundry
+const confirmLaundryReceipt = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const workerId = req.user.id;
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        const nextStatus = 'Laundry Received';
+        await db.query('UPDATE laundry_orders SET status = ? WHERE id = ?', [nextStatus, orderId]);
+
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, "Physical receipt of laundry verified at laundry hub. Awaiting weighing.", ?)',
+            [orderId, nextStatus, workerId]
+        );
+
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Laundry Received at Facility", ?)',
+            [
+                order.customer_id,
+                orderId,
+                `Your laundry for order ${order.order_number} has been received at our facility and is being calibrated on our scale.`
+            ]
+        );
+
+        await logActivity({
+            req,
+            actorId: workerId,
+            actorName: req.user.name,
+            actorRole: req.user.role,
+            actionType: 'laundry_received',
+            description: `Physical receipt of laundry confirmed at facility for order ${order.order_number}`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success'
+        });
+
+        res.json({ message: 'Laundry receipt confirmed successfully', status: nextStatus });
+    } catch (error) {
+        console.error('Error confirming receipt:', error);
+        res.status(500).json({ message: 'Error confirming laundry receipt', error: error.message });
+    }
+};
+
+// 8. Worker: Record Laundry Weight & Calculate Automated Multi-load Pricing
+const recordLaundryWeight = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const { actual_weight } = req.body;
+        const workerId = req.user.id;
+
+        if (actual_weight === undefined || actual_weight === null || actual_weight === '') {
+            return res.status(400).json({ message: 'Actual measured weight is required.' });
+        }
+
+        const numericWeight = parseFloat(actual_weight);
+        if (isNaN(numericWeight) || numericWeight <= 0) {
+            return res.status(400).json({ message: 'Weight must be a positive numeric value greater than zero.' });
+        }
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        // Run pricing rule calculation
+        const pricing = calculateLaundryPricing(numericWeight);
+
+        let nextStatus;
+        let notifTitle;
+        let notifMessage;
+
+        if (pricing.isOverweight) {
+            // Overweight > 8 kg requires customer approval before processing
+            nextStatus = 'Awaiting Customer Confirmation';
+            notifTitle = 'Weight Confirmation Required';
+            notifMessage = `Your laundry has been weighed. Actual weight: ${pricing.measuredWeight} kg. Final laundry cost: ₱${pricing.totalAmount.toFixed(2)}. Please review your updated order details.`;
+        } else {
+            // Standard weight (<= 8kg) - immediately commence processing
+            nextStatus = 'Processing';
+            notifTitle = 'Laundry Weighed & Processing Started';
+            notifMessage = `Your laundry has been weighed. Actual weight: ${pricing.measuredWeight} kg. Final laundry cost: ₱${pricing.totalAmount.toFixed(2)}. Please review your updated order details.`;
+        }
+
+        await db.query(
+            `UPDATE laundry_orders 
+             SET actual_weight = ?, 
+                 load_count = ?, 
+                 load_details = ?, 
+                 total_amount = ?, 
+                 final_amount = ?,
+                 pricing_version = ?, 
+                 weight_recorded_by = ?, 
+                 weight_recorded_at = NOW(),
+                 status = ?,
+                 processing_stage = ?
+             WHERE id = ?`,
+            [
+                pricing.measuredWeight,
+                pricing.loadCount,
+                JSON.stringify(pricing.loads),
+                pricing.totalAmount,
+                pricing.totalAmount,
+                pricing.pricingVersion,
+                workerId,
+                nextStatus,
+                pricing.isOverweight ? null : 'Washing',
+                orderId
+            ]
+        );
+
+        // Audit status history
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+            [
+                orderId, 
+                nextStatus, 
+                `Recorded weight: ${pricing.measuredWeight} kg across ${pricing.loadCount} load(s). Total: ₱${pricing.totalAmount.toFixed(2)}. ${pricing.isOverweight ? 'Awaiting customer confirmation.' : 'Standard load.'}`, 
+                workerId
+            ]
+        );
+
+        // Customer notification
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
+            [order.customer_id, orderId, notifTitle, notifMessage]
+        );
+
+        await logActivity({
+            req,
+            actorId: workerId,
+            actorName: req.user.name,
+            actorRole: req.user.role,
+            actionType: 'weight_recorded',
+            description: `Recorded actual weight: ${pricing.measuredWeight} kg across ${pricing.loadCount} load(s) (₱${pricing.totalAmount.toFixed(2)}) for order ${order.order_number}`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: { actual_weight: pricing.measuredWeight, load_count: pricing.loadCount, total_amount: pricing.totalAmount }
+        });
+
+        res.json({
+            message: 'Laundry weight recorded successfully',
+            pricing,
+            status: nextStatus
+        });
+    } catch (error) {
+        console.error('Error recording weight:', error);
+        res.status(500).json({ message: 'Error recording weight', error: error.message });
+    }
+};
+
+// Worker: Send Price & Weight to Customer explicitly
+const sendPriceToCustomer = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const workerId = req.user.id;
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        if (!order.actual_weight || parseFloat(order.actual_weight) <= 0) {
+            return res.status(400).json({ message: 'Actual laundry weight must be recorded before sending price to customer.' });
+        }
+
+        const pricing = calculateLaundryPricing(order.actual_weight);
+        const finalPrice = pricing.totalAmount;
+        const nextStatus = pricing.isOverweight ? 'Awaiting Customer Confirmation' : 'Processing';
+        const notifTitle = pricing.isOverweight ? 'Weight & Price Confirmation Required' : 'Laundry Weighed & Pricing Confirmed';
+        const notifMessage = `Your laundry has been weighed. Actual weight: ${pricing.measuredWeight} kg. Final laundry cost: ₱${finalPrice.toFixed(2)}. Please review your updated order details.`;
+
+        await db.query(
+            `UPDATE laundry_orders 
+             SET total_amount = ?, 
+                 final_amount = ?,
+                 status = ?,
+                 processing_stage = COALESCE(processing_stage, ?)
+             WHERE id = ?`,
+            [finalPrice, finalPrice, nextStatus, pricing.isOverweight ? null : 'Washing', orderId]
+        );
+
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+            [orderId, nextStatus, `Sent final pricing to customer: ₱${finalPrice.toFixed(2)} for ${pricing.measuredWeight} kg across ${pricing.loadCount} load(s).`, workerId]
+        );
 
         await db.query(
             'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-            [customer_id, orderId, title, message]
+            [order.customer_id, orderId, notifTitle, notifMessage]
         );
 
-        res.json({ message: 'Status updated successfully' });
+        await logActivity({
+            req,
+            actorId: workerId,
+            actorName: req.user.name,
+            actorRole: req.user.role,
+            actionType: 'price_sent',
+            description: `Sent final price ₱${finalPrice.toFixed(2)} to customer for order ${order.order_number} (${pricing.measuredWeight} kg, ${pricing.loadCount} load(s))`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: { finalPrice, measuredWeight: pricing.measuredWeight, loadCount: pricing.loadCount }
+        });
+
+        res.json({
+            message: 'Pricing notification sent to customer successfully.',
+            pricing,
+            status: nextStatus
+        });
     } catch (error) {
+        console.error('Error sending price to customer:', error);
+        res.status(500).json({ message: 'Error sending price to customer', error: error.message });
+    }
+};
+
+// 9. Customer: Approve or Reject Overweight Proposal
+const customerWeightDecision = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const { decision, rejection_reason } = req.body; // 'approve' | 'reject'
+        const customerId = req.user.id;
+
+        const [orders] = await db.query(
+            'SELECT * FROM laundry_orders WHERE id = ? AND customer_id = ?',
+            [orderId, customerId]
+        );
+
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found or unauthorized' });
+        const order = orders[0];
+
+        if (order.status !== 'Awaiting Customer Approval' && order.status !== 'Awaiting Customer Confirmation') {
+            return res.status(400).json({ message: `Order is not awaiting weight confirmation (Current status: ${order.status})` });
+        }
+
+        if (decision === 'approve') {
+            // Customer approved the load allocation and total price
+            const nextStatus = 'Processing';
+            await db.query(
+                `UPDATE laundry_orders 
+                 SET weight_approved_by_customer = 1, 
+                     weight_approved_at = NOW(), 
+                     status = ?,
+                     processing_stage = 'Washing'
+                 WHERE id = ?`,
+                [nextStatus, orderId]
+            );
+
+            await db.query(
+                'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+                [orderId, nextStatus, `Customer explicitly approved overweight load allocation and total price of ₱${parseFloat(order.total_amount).toFixed(2)}.`, customerId]
+            );
+
+            // Notify staff
+            const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
+            for (const worker of staff) {
+                await db.query(
+                    'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Weight Proposal Approved", ?)',
+                    [worker.id, orderId, `Customer approved weight allocation for order ${order.order_number}. Processing has commenced.`]
+                );
+            }
+
+            await logActivity({
+                req,
+                actorId: customerId,
+                actorName: req.user.name,
+                actorRole: 'customer',
+                actionType: 'customer_price_confirmed',
+                description: `Customer confirmed and approved weight & pricing of ₱${parseFloat(order.total_amount).toFixed(2)} for order ${order.order_number}`,
+                entityType: 'order',
+                entityId: orderId,
+                outcome: 'success'
+            });
+
+            return res.json({
+                message: 'You have approved the load allocation and pricing. Our laundry team will now begin processing your clothes!',
+                status: nextStatus
+            });
+        } else if (decision === 'reject') {
+            // Customer rejected proposal: stops processing
+            const nextStatus = 'Customer Rejected Weight Proposal';
+            const reason = rejection_reason || 'Customer declined additional charges for multiple loads';
+
+            await db.query(
+                `UPDATE laundry_orders 
+                 SET weight_approved_by_customer = 0, 
+                     rejection_reason = ?, 
+                     status = ?
+                 WHERE id = ?`,
+                [reason, nextStatus, orderId]
+            );
+
+            await db.query(
+                'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+                [orderId, nextStatus, `Customer rejected overweight proposal: ${reason}`, customerId]
+            );
+
+            // Notify staff to contact customer or arrange return
+            const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
+            for (const worker of staff) {
+                await db.query(
+                    'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Customer Rejected Weight Proposal", ?)',
+                    [worker.id, orderId, `Customer rejected weight proposal for order ${order.order_number}. Staff resolution or return required.`]
+                );
+            }
+
+            await logActivity({
+                req,
+                actorId: customerId,
+                actorName: req.user.name,
+                actorRole: 'customer',
+                actionType: 'customer_price_rejected',
+                description: `Customer rejected weight proposal for order ${order.order_number}. Reason: ${reason}`,
+                entityType: 'order',
+                entityId: orderId,
+                outcome: 'failure',
+                metadata: { reason }
+            });
+
+            return res.json({
+                message: 'You have declined the proposed weight allocation. Laundry processing has been stopped and our staff will contact you.',
+                status: nextStatus
+            });
+        } else {
+            return res.status(400).json({ message: "Invalid decision. Must be 'approve' or 'reject'." });
+        }
+    } catch (error) {
+        console.error('Error handling customer weight decision:', error);
+        res.status(500).json({ message: 'Error processing decision', error: error.message });
+    }
+};
+
+// 10. Worker: Advance Normal Processing Stage (Washing -> Drying -> Folding -> Quality Check -> Ready for Delivery)
+const updateProcessingStage = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const { stage, notes } = req.body; // 'Washing' | 'Drying' | 'Folding' | 'Quality Check' | 'Ready for Delivery'
+        const workerId = req.user.id;
+
+        const VALID_STAGES = ['Washing', 'Drying', 'Folding', 'Quality Check', 'Ready for Delivery'];
+        if (!stage || !VALID_STAGES.includes(stage)) {
+            return res.status(400).json({ message: `Invalid processing stage. Allowed stages: ${VALID_STAGES.join(', ')}` });
+        }
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        // Guard: Prevent proceeding if overweight without customer approval!
+        if (order.actual_weight > 8 && order.weight_approved_by_customer !== 1) {
+            return res.status(400).json({ 
+                message: 'Cannot process overweight laundry (>8kg) without explicit customer approval.' 
+            });
+        }
+
+        let nextOrderStatus = 'Processing';
+        let notifTitle = `Laundry Stage: ${stage}`;
+        let notifMsg = `Your laundry order ${order.order_number} is now in the ${stage} stage.`;
+
+        if (stage === 'Ready for Delivery') {
+            nextOrderStatus = 'Ready for Delivery';
+            notifTitle = 'Laundry Ready for Delivery!';
+            notifMsg = `Your laundry for order ${order.order_number} is clean, neatly folded, and ready for delivery. A driver will be assigned shortly.`;
+        }
+
+        await db.query(
+            'UPDATE laundry_orders SET processing_stage = ?, status = ? WHERE id = ?',
+            [stage, nextOrderStatus, orderId]
+        );
+
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+            [orderId, nextOrderStatus, notes || `Processing stage advanced to ${stage}`, workerId]
+        );
+
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
+            [order.customer_id, orderId, notifTitle, notifMsg]
+        );
+
+        await logActivity({
+            req,
+            actorId: workerId,
+            actorName: req.user.name,
+            actorRole: req.user.role,
+            actionType: stage === 'Ready for Delivery' ? 'ready_for_delivery' : 'stage_advanced',
+            description: `Order ${order.order_number} advanced to '${stage}'`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: { stage }
+        });
+
+        res.json({
+            message: `Processing stage updated to ${stage}`,
+            processing_stage: stage,
+            status: nextOrderStatus
+        });
+    } catch (error) {
+        console.error('Error updating processing stage:', error);
+        res.status(500).json({ message: 'Error updating processing stage', error: error.message });
+    }
+};
+
+// 11. Worker Dashboard: Get Workflow Counts for filter tabs
+const getWorkflowCounts = async (req, res) => {
+    try {
+        const [orders] = await db.query('SELECT status FROM laundry_orders');
+        
+        const counts = {
+            'all': orders.length,
+            'Pending Approval': 0,
+            'Approved': 0,
+            'Awaiting Pickup Assignment': 0,
+            'Driver Assigned': 0,
+            'Pickup in Progress': 0,
+            'Laundry Received': 0,
+            'Awaiting Customer Approval': 0,
+            'Processing': 0,
+            'Ready for Delivery': 0,
+            'Delivery in Progress': 0,
+            'Completed': 0,
+            'Cancelled': 0
+        };
+
+        orders.forEach(o => {
+            const st = o.status;
+            if (st === 'Pending Approval' || st === 'Pending Request') counts['Pending Approval']++;
+            else if (st === 'Approved') counts['Approved']++;
+            else if (st === 'Awaiting Pickup Assignment') counts['Awaiting Pickup Assignment']++;
+            else if (st === 'Driver Assigned' || st === 'Pickup Scheduled') counts['Driver Assigned']++;
+            else if (st === 'Pickup in Progress') counts['Pickup in Progress']++;
+            else if (st === 'Laundry Received' || st === 'Picked Up') counts['Laundry Received']++;
+            else if (st === 'Awaiting Customer Approval') counts['Awaiting Customer Approval']++;
+            else if (st === 'Processing' || st === 'Washing' || st === 'Drying' || st === 'Folding') counts['Processing']++;
+            else if (st === 'Ready for Delivery' || st === 'Ready') counts['Ready for Delivery']++;
+            else if (st === 'Delivery Assigned' || st === 'Out for Delivery') counts['Delivery in Progress']++;
+            else if (st === 'Delivered' || st === 'Completed') counts['Completed']++;
+            else if (st === 'Cancelled' || st === 'Customer Rejected Weight Proposal') counts['Cancelled']++;
+        });
+
+        res.json(counts);
+    } catch (error) {
+        console.error('Error fetching workflow counts:', error);
+        res.status(500).json({ message: 'Error fetching workflow counts', error: error.message });
+    }
+};
+
+// 12. Helper: Get available active drivers for assignment modal
+const getAvailableDrivers = async (req, res) => {
+    try {
+        const [drivers] = await db.query(`
+            SELECT u.id, u.name, u.phone, u.email, u.is_active,
+                   (SELECT COUNT(*) FROM pickup_requests p WHERE p.driver_id = u.id AND p.status IN ('assigned', 'on_the_way')) as active_pickups,
+                   (SELECT COUNT(*) FROM delivery_requests d WHERE d.driver_id = u.id AND d.status IN ('assigned', 'out_for_delivery')) as active_deliveries
+            FROM users u
+            WHERE u.role = 'driver' AND u.is_active = 1 AND u.approval_status = 'approved'
+            ORDER BY (active_pickups + active_deliveries) ASC, u.name ASC
+        `);
+        res.json(drivers);
+    } catch (error) {
+        console.error('Error fetching drivers:', error);
+        res.status(500).json({ message: 'Error fetching available drivers', error: error.message });
+    }
+};
+
+// Update order status (General fallback)
+const updateOrderStatus = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const { status, notes, total_amount, estimated_weight } = req.body;
+        const userId = req.user.id;
+
+        const [orders] = await db.query('SELECT status, customer_id, order_number FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+        const currentOrder = orders[0];
+
+        let updateSql = 'UPDATE laundry_orders SET status = ?';
+        let updateParams = [status];
+
+        if (total_amount !== undefined) {
+            updateSql += ', total_amount = ?';
+            updateParams.push(parseFloat(total_amount) || 0);
+        }
+        if (estimated_weight !== undefined) {
+            updateSql += ', estimated_weight = ?';
+            updateParams.push(parseFloat(estimated_weight) || 0);
+        }
+
+        updateSql += ' WHERE id = ?';
+        updateParams.push(orderId);
+
+        await db.query(updateSql, updateParams);
+        
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+            [orderId, status, notes || `Status updated to ${status}`, userId]
+        );
+
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Order Status Updated", ?)',
+            [currentOrder.customer_id, orderId, `Your order ${currentOrder.order_number} status is now ${status}.`]
+        );
+
+        await logActivity({
+            req,
+            actorId: userId,
+            actorName: req.user.name,
+            actorRole: req.user.role,
+            actionType: 'order_status_updated',
+            description: `Order ${currentOrder.order_number} status updated to '${status}'`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: { status }
+        });
+
+        res.json({ message: 'Status updated successfully', status });
+    } catch (error) {
+        console.error('Error updating status:', error);
         res.status(500).json({ message: 'Error updating status', error: error.message });
     }
 };
 
-// Request Delivery (Customer)
+// Customer or Staff cancel order
+const cancelOrder = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const userId = req.user.id;
+        const isStaff = req.user.role === 'worker' || req.user.role === 'admin';
+
+        let query = 'SELECT status, customer_id, order_number FROM laundry_orders WHERE id = ?';
+        let params = [orderId];
+        if (!isStaff) {
+            query += ' AND customer_id = ?';
+            params.push(userId);
+        }
+
+        const [orders] = await db.query(query, params);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+        if (!isStaff && orders[0].status !== 'Pending Approval' && orders[0].status !== 'Pending Request') {
+            return res.status(400).json({ 
+                message: 'This order is already being processed or assigned and cannot be cancelled automatically.' 
+            });
+        }
+
+        await db.query('UPDATE laundry_orders SET status = "Cancelled" WHERE id = ?', [orderId]);
+        await db.query('UPDATE pickup_requests SET status = "cancelled" WHERE order_id = ?', [orderId]);
+        await db.query('UPDATE delivery_requests SET status = "cancelled" WHERE order_id = ?', [orderId]);
+
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, "Cancelled", ?, ?)',
+            [orderId, isStaff ? `Cancelled by staff (${req.user.name || req.user.role})` : 'Cancelled by customer', userId]
+        );
+
+        await logActivity({
+            req,
+            actorId: userId,
+            actorName: req.user.name,
+            actorRole: req.user.role,
+            actionType: 'order_cancelled',
+            description: `Order ${orders[0].order_number} was cancelled by ${isStaff ? 'staff' : 'customer'}`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'failure'
+        });
+
+        res.json({ message: 'Order has been successfully cancelled' });
+    } catch (error) {
+        console.error('Error cancelling order:', error);
+        res.status(500).json({ message: 'Error cancelling order', error: error.message });
+    }
+};
+
+// Customer Request Delivery
 const requestDelivery = async (req, res) => {
-     try {
+    try {
         const orderId = req.params.id;
         const customer_id = req.user.id;
-        const { delivery_date, delivery_time, address_id } = req.body;
+        const { delivery_date, delivery_time, address_id, delivery_address_text } = req.body;
 
         const [orders] = await db.query('SELECT status, customer_id, order_number FROM laundry_orders WHERE id = ?', [orderId]);
         if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
         
         if (orders[0].customer_id !== customer_id) return res.status(403).json({ message: 'Access denied' });
-        if (orders[0].status !== 'Ready') return res.status(400).json({ message: 'Laundry is not Ready yet' });
+        if (orders[0].status !== 'Ready for Delivery' && orders[0].status !== 'Ready') {
+            return res.status(400).json({ message: 'Laundry must be Ready before scheduling delivery' });
+        }
 
-        // Create delivery request
-        await db.query(
-            'INSERT INTO delivery_requests (order_id, customer_id, status, delivery_date, delivery_time, address_id) VALUES (?, ?, ?, ?, ?, ?)',
-            [orderId, customer_id, 'pending', delivery_date, delivery_time, address_id || null]
-        );
+        const [existing] = await db.query('SELECT id FROM delivery_requests WHERE order_id = ?', [orderId]);
+        if (existing.length > 0) {
+            await db.query(
+                'UPDATE delivery_requests SET status = "pending", delivery_date = ?, delivery_time = ?, address_id = ?, notes = ? WHERE order_id = ?',
+                [delivery_date || new Date().toISOString().split('T')[0], delivery_time || 'Afternoon', address_id || null, delivery_address_text || '', orderId]
+            );
+        } else {
+            await db.query(
+                'INSERT INTO delivery_requests (order_id, customer_id, status, delivery_date, delivery_time, address_id, notes) VALUES (?, ?, "pending", ?, ?, ?, ?)',
+                [orderId, customer_id, delivery_date || new Date().toISOString().split('T')[0], delivery_time || 'Afternoon', address_id || null, delivery_address_text || '']
+            );
+        }
 
-        await db.query(
-            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
-            [orderId, 'Ready', 'Customer requested delivery', customer_id]
-        );
+        if (delivery_address_text) {
+            await db.query('UPDATE laundry_orders SET delivery_address_text = ? WHERE id = ?', [delivery_address_text, orderId]);
+        }
 
-        res.json({ message: 'Delivery requested successfully' });
-     } catch (error) {
+        res.json({ message: 'Delivery requested successfully. Our team will assign a driver shortly.' });
+    } catch (error) {
+        console.error('Error requesting delivery:', error);
         res.status(500).json({ message: 'Error requesting delivery', error: error.message });
-     }
+    }
 };
 
-// Full Update Order (Admin CRUD)
 const updateOrder = async (req, res) => {
     try {
-        const { service_type, estimated_weight, preferred_date, preferred_time, special_instructions, status, payment_status } = req.body;
+        const { service_type, service_name, estimated_weight, total_amount, preferred_date, preferred_time, special_instructions, status, payment_status, pickup_address_text, delivery_address_text } = req.body;
         let fields = [];
         let params = [];
 
         if (service_type) { fields.push('service_type = ?'); params.push(service_type); }
+        if (service_name) { fields.push('service_name = ?'); params.push(service_name); }
         if (estimated_weight !== undefined) { fields.push('estimated_weight = ?'); params.push(estimated_weight); }
+        if (total_amount !== undefined) { fields.push('total_amount = ?'); params.push(total_amount); }
         if (preferred_date) { fields.push('preferred_date = ?'); params.push(preferred_date); }
         if (preferred_time) { fields.push('preferred_time = ?'); params.push(preferred_time); }
         if (special_instructions !== undefined) { fields.push('special_instructions = ?'); params.push(special_instructions); }
+        if (pickup_address_text !== undefined) { fields.push('pickup_address_text = ?'); params.push(pickup_address_text); }
+        if (delivery_address_text !== undefined) { fields.push('delivery_address_text = ?'); params.push(delivery_address_text); }
         if (status) { fields.push('status = ?'); params.push(status); }
         if (payment_status) { fields.push('payment_status = ?'); params.push(payment_status); }
 
@@ -204,7 +1236,6 @@ const updateOrder = async (req, res) => {
     }
 };
 
-// Delete Order (Admin CRUD)
 const deleteOrder = async (req, res) => {
     try {
         const [result] = await db.query('DELETE FROM laundry_orders WHERE id = ?', [req.params.id]);
@@ -215,4 +1246,23 @@ const deleteOrder = async (req, res) => {
     }
 };
 
-module.exports = { createOrder, getOrders, getOrderById, updateOrderStatus, requestDelivery, updateOrder, deleteOrder };
+module.exports = { 
+    createOrder, 
+    getOrders, 
+    getOrderById, 
+    approveOrder,
+    rejectOrder,
+    assignDriver,
+    confirmLaundryReceipt,
+    recordLaundryWeight,
+    sendPriceToCustomer,
+    customerWeightDecision,
+    updateProcessingStage,
+    getWorkflowCounts,
+    getAvailableDrivers,
+    updateOrderStatus, 
+    cancelOrder, 
+    requestDelivery, 
+    updateOrder, 
+    deleteOrder 
+};
