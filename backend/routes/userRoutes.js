@@ -21,11 +21,12 @@ router.post('/drivers/:id/resend-sms', authorizeRole('admin'), userController.re
 
 // 3. User Management Summary & Operations (Admin Only)
 router.get('/summary', authorizeRole('admin'), userController.getUserManagementSummary);
+router.get('/customers', authorizeRole('admin', 'worker'), userController.getCustomers);
 router.put('/:id/toggle-active', authorizeRole('admin'), userController.toggleUserActive);
 router.post('/admin', authorizeRole('admin'), userController.createAdmin);
 
-// 4. User CRUD (Admin Only)
-router.get('/', authorizeRole('admin'), userController.getAllUsers);
+// 4. User CRUD (Admin & Worker for customer queries)
+router.get('/', authorizeRole('admin', 'worker'), userController.getAllUsers);
 router.post('/', authorizeRole('admin'), userController.createUser);
 router.get('/:id', userController.getUserById);
 router.put('/:id', authorizeRole('admin'), userController.updateUser);

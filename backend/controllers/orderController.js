@@ -156,7 +156,7 @@ const createOrder = async (req, res) => {
             actorName: req.user.name,
             actorRole: 'customer',
             actionType: 'order_created',
-            description: `New laundry request ${order_number} submitted (${sName}, ${pricing.measuredWeight} kg, ${loadCount} load(s) @ ₱${calcAmount.toFixed(2)})`,
+            description: `New laundry request submitted – Customer: ${req.user.name} (Order #${order_number})`,
             entityType: 'order',
             entityId: orderId,
             outcome: 'success',
@@ -234,13 +234,15 @@ const getOrders = async (req, res) => {
                    d.driver_id as delivery_driver_id,
                    du.name as delivery_driver_name,
                    du.phone as delivery_driver_phone,
-                   (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE order_id = lo.id AND (payment_status = 'paid' OR payment_status = 'Paid (Demo)')) as total_paid
+                   (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE order_id = lo.id AND (payment_status = 'paid' OR payment_status = 'Paid (Demo)')) as total_paid,
+                   pay_u.name as payment_collected_by_name
             FROM laundry_orders lo
             JOIN users u ON lo.customer_id = u.id
             LEFT JOIN pickup_requests p ON lo.id = p.order_id
             LEFT JOIN users pu ON COALESCE(lo.assigned_pickup_driver_id, p.driver_id) = pu.id
             LEFT JOIN delivery_requests d ON lo.id = d.order_id
             LEFT JOIN users du ON COALESCE(lo.assigned_delivery_driver_id, d.driver_id) = du.id
+            LEFT JOIN users pay_u ON lo.payment_collected_by = pay_u.id
         `;
         let params = [];
 
@@ -291,7 +293,8 @@ const getOrderById = async (req, res) => {
                    app_u.name as approver_name,
                    pcu.name as pickup_confirmer_name,
                    dcu.name as delivery_confirmer_name,
-                   wcu.name as weight_recorder_name
+                   wcu.name as weight_recorder_name,
+                   pay_u.name as payment_collected_by_name
             FROM laundry_orders lo
             JOIN users u ON lo.customer_id = u.id
             LEFT JOIN pickup_requests p ON lo.id = p.order_id
@@ -302,6 +305,7 @@ const getOrderById = async (req, res) => {
             LEFT JOIN users pcu ON lo.pickup_confirmed_by = pcu.id
             LEFT JOIN users dcu ON lo.delivery_confirmed_by = dcu.id
             LEFT JOIN users wcu ON lo.weight_recorded_by = wcu.id
+            LEFT JOIN users pay_u ON lo.payment_collected_by = pay_u.id
             WHERE lo.id = ?
         `, [orderId]);
         
@@ -385,7 +389,7 @@ const approveOrder = async (req, res) => {
             actorName: req.user.name,
             actorRole: req.user.role,
             actionType: 'order_approved',
-            description: `Approved laundry order ${order.order_number}`,
+            description: `Laundry requests approved – Order #${order.order_number}`,
             entityType: 'order',
             entityId: orderId,
             outcome: 'success'
@@ -523,8 +527,8 @@ const assignDriver = async (req, res) => {
                 actorId: workerId,
                 actorName: req.user.name,
                 actorRole: req.user.role,
-                actionType: 'delivery_driver_assigned',
-                description: `Delivery assigned to driver ${driver.name} for order ${order.order_number}`,
+                actionType: 'driver_assigned',
+                description: `Driver assigned – Order #${order.order_number}`,
                 entityType: 'order',
                 entityId: orderId,
                 outcome: 'success',
@@ -572,8 +576,8 @@ const assignDriver = async (req, res) => {
                 actorId: workerId,
                 actorName: req.user.name,
                 actorRole: req.user.role,
-                actionType: 'pickup_driver_assigned',
-                description: `Pickup assigned to driver ${driver.name} for order ${order.order_number}`,
+                actionType: 'driver_assigned',
+                description: `Driver assigned – Order #${order.order_number}`,
                 entityType: 'order',
                 entityId: orderId,
                 outcome: 'success',
@@ -1246,8 +1250,613 @@ const deleteOrder = async (req, res) => {
     }
 };
 
+// 13. WORKER: Add Walk-in / Drop-off Laundry Transaction
+const createWalkInOrder = async (req, res) => {
+    try {
+        const {
+            customer_id,
+            customer_name,
+            customer_phone,
+            customer_email,
+            weight,
+            service_name,
+            payment_status,
+            payment_method,
+            special_instructions
+        } = req.body;
+        const workerId = req.user.id;
+        const workerName = req.user.name;
+
+        // Weight validation strictly positive
+        const numericWeight = parseFloat(weight);
+        if (isNaN(numericWeight) || numericWeight <= 0) {
+            return res.status(400).json({ message: 'Invalid laundry weight. Weight must be a positive number greater than zero.' });
+        }
+        if (numericWeight > 100) {
+            return res.status(400).json({ message: 'Laundry weight cannot exceed 100 kg in a single transaction.' });
+        }
+
+        let targetCustomerId = customer_id ? parseInt(customer_id) : null;
+        let finalCustomerName = customer_name ? customer_name.trim() : '';
+        let finalCustomerPhone = customer_phone ? customer_phone.trim() : null;
+
+        // If new customer registration
+        if (!targetCustomerId) {
+            if (!finalCustomerName) {
+                return res.status(400).json({ message: "Customer's name is required when registering a new customer." });
+            }
+
+            // Check if customer with this email or phone already exists
+            let existingUser = null;
+            if (customer_email && customer_email.trim()) {
+                const [byEmail] = await db.query('SELECT id, name, phone FROM users WHERE email = ?', [customer_email.trim().toLowerCase()]);
+                if (byEmail.length > 0) existingUser = byEmail[0];
+            }
+            if (!existingUser && finalCustomerPhone) {
+                const [byPhone] = await db.query('SELECT id, name, phone FROM users WHERE phone = ?', [finalCustomerPhone]);
+                if (byPhone.length > 0) existingUser = byPhone[0];
+            }
+
+            if (existingUser) {
+                targetCustomerId = existingUser.id;
+                finalCustomerName = existingUser.name;
+                finalCustomerPhone = existingUser.phone;
+            } else {
+                const generatedEmail = (customer_email && customer_email.trim()) 
+                    ? customer_email.trim().toLowerCase() 
+                    : `customer_${Date.now()}@laundrigo.local`;
+                const bcrypt = require('bcrypt');
+                const defaultHash = await bcrypt.hash('LaundriGo123!', 10);
+                const [newUserResult] = await db.query(
+                    'INSERT INTO users (name, email, password, phone, role, is_active, approval_status, created_by) VALUES (?, ?, ?, ?, "customer", 1, "approved", ?)',
+                    [finalCustomerName, generatedEmail, defaultHash, finalCustomerPhone, workerId]
+                );
+                targetCustomerId = newUserResult.insertId;
+            }
+        } else {
+            const [custRows] = await db.query('SELECT id, name, phone FROM users WHERE id = ?', [targetCustomerId]);
+            if (custRows.length > 0) {
+                finalCustomerName = custRows[0].name;
+                finalCustomerPhone = custRows[0].phone;
+            }
+        }
+
+        // Automatic price calculation using existing rules
+        const pricing = calculateLaundryPricing(numericWeight);
+        const calcAmount = pricing.totalAmount;
+        const loadCount = pricing.loadCount;
+        const loadDetails = JSON.stringify(pricing.loads);
+        const sName = service_name || 'Wash & Fold';
+
+        // Reference number generation LAU-YYYY-XXXXX
+        const year = new Date().getFullYear();
+        const [lastOrder] = await db.query('SELECT id FROM laundry_orders ORDER BY id DESC LIMIT 1');
+        const nextId = (lastOrder.length > 0 ? lastOrder[0].id : 0) + 1;
+        const order_number = `LAU-${year}-${String(nextId).padStart(5, '0')}`;
+
+        const isPaid = (payment_status === 'paid' || payment_status === 'Paid');
+        const initialPaymentStatus = isPaid ? 'paid' : 'unpaid';
+        const finalPaymentMethod = payment_method || 'cash';
+        const initialStatus = 'Pending';
+
+        const [orderResult] = await db.query(
+            `INSERT INTO laundry_orders 
+            (order_number, customer_id, service_type, service_name, estimated_weight, actual_weight, total_amount, estimated_amount, final_amount, load_count, load_details, pricing_version, preferred_date, preferred_time, special_instructions, status, payment_status, payment_method, is_walkin, registered_by, payment_collected_by, payment_collected_at) 
+            VALUES (?, ?, 'customer_dropoff', ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), 'Drop-off', ?, ?, ?, ?, 1, ?, ?, ?)`,
+            [
+                order_number,
+                targetCustomerId,
+                sName,
+                numericWeight,
+                numericWeight,
+                calcAmount,
+                calcAmount,
+                calcAmount,
+                loadCount,
+                loadDetails,
+                pricing.pricingVersion,
+                special_instructions || 'Walk-in / Drop-off Laundry at Shop',
+                initialStatus,
+                initialPaymentStatus,
+                finalPaymentMethod,
+                workerId,
+                isPaid ? workerId : null,
+                isPaid ? new Date() : null
+            ]
+        );
+
+        const orderId = orderResult.insertId;
+
+        // If marked as Paid, record payment
+        if (isPaid) {
+            const refNum = `WALK-PAY-${Date.now()}`;
+            await db.query(
+                'INSERT INTO payments (order_id, amount, payment_method, payment_status, reference_number, collected_by, payment_date) VALUES (?, ?, ?, "paid", ?, ?, NOW())',
+                [orderId, calcAmount, finalPaymentMethod, refNum, workerId]
+            );
+
+            // Payment received activity log
+            await logActivity({
+                req,
+                actorId: workerId,
+                actorName: workerName,
+                actorRole: req.user.role,
+                actionType: 'payment_received',
+                description: `Payment received – ₱${calcAmount.toFixed(2)}`,
+                entityType: 'payment',
+                entityId: orderId,
+                outcome: 'success',
+                metadata: { order_number, amount: calcAmount, reference_number: refNum, customer_name: finalCustomerName }
+            });
+        }
+
+        // Status history entry
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+            [orderId, initialStatus, `Walk-in laundry registered by worker ${workerName} (${numericWeight} kg, ₱${calcAmount.toFixed(2)}, ${initialPaymentStatus})`, workerId]
+        );
+
+        // Activity log for walk-in registration
+        await logActivity({
+            req,
+            actorId: workerId,
+            actorName: workerName,
+            actorRole: req.user.role,
+            actionType: 'walk_in_registered',
+            description: `Walk-in laundry registered – Worker: ${workerName}`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: {
+                order_number,
+                customer_name: finalCustomerName,
+                weight: numericWeight,
+                total_amount: calcAmount,
+                payment_status: initialPaymentStatus,
+                worker_name: workerName
+            }
+        });
+
+        // Customer notification
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Laundry Added", "Laundry transaction successfully registered")',
+            [targetCustomerId, orderId]
+        );
+
+        res.status(201).json({
+            success: true,
+            message: 'Laundry transaction successfully added.',
+            orderId,
+            order: {
+                id: orderId,
+                order_number,
+                customer_name: finalCustomerName,
+                weight: numericWeight,
+                total_amount: calcAmount,
+                payment_status: initialPaymentStatus,
+                status: initialStatus
+            },
+            order_number,
+            customer_name: finalCustomerName,
+            weight: numericWeight,
+            total_amount: calcAmount,
+            load_count: loadCount,
+            loads: pricing.loads,
+            payment_status: initialPaymentStatus,
+            status: initialStatus
+        });
+    } catch (error) {
+        console.error('Error creating walk-in order:', error);
+        res.status(500).json({ message: 'Failed to save laundry transaction: ' + error.message });
+    }
+};
+
+// 14. WORKER: Start Laundry Processing (Simplified Status: Processing)
+const startLaundryProcessing = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const workerId = req.user.id;
+        const workerName = req.user.name;
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        const nextStatus = 'Processing';
+        await db.query(
+            'UPDATE laundry_orders SET status = ?, processing_started_at = NOW(), processing_stage = "Processing" WHERE id = ?',
+            [nextStatus, orderId]
+        );
+
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+            [orderId, nextStatus, 'Laundry processing started by worker ' + workerName + ' (allow approx. 2 hours)', workerId]
+        );
+
+        // Customer notification
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Processing Started", "Your laundry is being processed. Please allow approximately 2 hours")',
+            [order.customer_id, orderId]
+        );
+
+        // Activity log
+        await logActivity({
+            req,
+            actorId: workerId,
+            actorName: workerName,
+            actorRole: req.user.role,
+            actionType: 'processing_started',
+            description: `Laundry processing started – Order #${order.order_number}`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: { order_number: order.order_number, worker_name: workerName }
+        });
+
+        res.json({
+            success: true,
+            message: 'Laundry successfully marked as processing.',
+            status: nextStatus
+        });
+    } catch (error) {
+        console.error('Error starting processing:', error);
+        res.status(500).json({ message: 'Failed to update laundry status: ' + error.message });
+    }
+};
+
+// 15. WORKER: Mark Laundry as Ready for Pickup/Delivery
+const markLaundryReady = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const workerId = req.user.id;
+        const workerName = req.user.name;
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        const nextStatus = 'Ready for Pickup/Delivery';
+        await db.query(
+            'UPDATE laundry_orders SET status = ?, ready_at = NOW() WHERE id = ?',
+            [nextStatus, orderId]
+        );
+
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+            [orderId, nextStatus, 'Laundry completed and marked as ready by ' + workerName, workerId]
+        );
+
+        // Customer notification
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Laundry Ready", "Your laundry is ready. Choose delivery or self-pickup")',
+            [order.customer_id, orderId]
+        );
+
+        // Activity log
+        await logActivity({
+            req,
+            actorId: workerId,
+            actorName: workerName,
+            actorRole: req.user.role,
+            actionType: 'order_ready',
+            description: `Laundry marked as ready for pickup – Order #${order.order_number}`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: { order_number: order.order_number, worker_name: workerName }
+        });
+
+        res.json({
+            success: true,
+            message: 'Laundry successfully marked as ready.',
+            status: nextStatus
+        });
+    } catch (error) {
+        console.error('Error marking laundry ready:', error);
+        res.status(500).json({ message: 'Failed to update laundry status: ' + error.message });
+    }
+};
+
+// 16. CUSTOMER: Select Delivery or Self-Pickup Option
+const selectFulfillmentChoice = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const customerId = req.user.id;
+        const { choice, delivery_address_text, delivery_latitude, delivery_longitude } = req.body;
+
+        if (choice !== 'delivery' && choice !== 'self_pickup') {
+            return res.status(400).json({ message: 'Invalid choice. Must be either delivery or self_pickup.' });
+        }
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        if (req.user.role === 'customer' && order.customer_id !== customerId) {
+            return res.status(403).json({ message: 'Access denied.' });
+        }
+
+        let notifTitle = '';
+        let notifMsg = '';
+        let actType = '';
+        let actDesc = '';
+        let newOrderStatus = order.status;
+
+        if (choice === 'delivery') {
+            newOrderStatus = 'Ready for Delivery';
+            const finalAddress = delivery_address_text || order.delivery_address_text || order.pickup_address_text || 'Customer Registered Address';
+            
+            await db.query(
+                'UPDATE laundry_orders SET customer_choice = "delivery", status = ?, delivery_address_text = ? WHERE id = ?',
+                [newOrderStatus, finalAddress, orderId]
+            );
+
+            // Ensure delivery_requests has pending record for driver assignment
+            const [existingDelivery] = await db.query('SELECT id FROM delivery_requests WHERE order_id = ?', [orderId]);
+            if (existingDelivery.length > 0) {
+                await db.query('UPDATE delivery_requests SET status = "pending", notes = ? WHERE order_id = ?', [finalAddress, orderId]);
+            } else {
+                await db.query(
+                    'INSERT INTO delivery_requests (order_id, customer_id, status, delivery_date, delivery_time, notes) VALUES (?, ?, "pending", CURDATE(), "Afternoon", ?)',
+                    [orderId, order.customer_id, finalAddress]
+                );
+            }
+
+            notifTitle = 'Delivery Selected';
+            notifMsg = 'Your laundry will be delivered';
+            actType = 'delivery_selected';
+            actDesc = `Customer selected delivery – Order #${order.order_number}`;
+
+            // Notify staff
+            const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
+            for (const worker of staff) {
+                await db.query(
+                    'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Delivery Option Selected", ?)',
+                    [worker.id, orderId, `Customer selected delivery for order ${order.order_number}. Address: ${finalAddress}`]
+                );
+            }
+        } else {
+            // self_pickup
+            newOrderStatus = 'Customer Pickup';
+            await db.query(
+                'UPDATE laundry_orders SET customer_choice = "self_pickup", status = ? WHERE id = ?',
+                [newOrderStatus, orderId]
+            );
+
+            notifTitle = 'Pickup Selected';
+            notifMsg = 'Your laundry is ready for pickup';
+            actType = 'pickup_selected';
+            actDesc = `Customer selected self-pickup – Order #${order.order_number}`;
+
+            // Notify staff
+            const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
+            for (const worker of staff) {
+                await db.query(
+                    'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Self-Pickup Selected", ?)',
+                    [worker.id, orderId, `Customer selected self-pickup for order ${order.order_number}. Awaiting customer collection at shop.`]
+                );
+            }
+        }
+
+        // Status history
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+            [orderId, newOrderStatus, actDesc, customerId]
+        );
+
+        // Customer notification
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
+            [order.customer_id, orderId, notifTitle, notifMsg]
+        );
+
+        // Centralized activity log
+        await logActivity({
+            req,
+            actorId: customerId,
+            actorName: req.user.name,
+            actorRole: req.user.role,
+            actionType: actType,
+            description: actDesc,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: { order_number: order.order_number, choice }
+        });
+
+        res.json({
+            success: true,
+            message: choice === 'delivery' ? 'Delivery option successfully selected. Your laundry will be delivered.' : 'Self-pickup option successfully selected. Your laundry is ready for pickup at our shop.',
+            choice,
+            customer_choice: choice,
+            status: newOrderStatus
+        });
+    } catch (error) {
+        console.error('Error selecting fulfillment choice:', error);
+        res.status(500).json({ message: 'Failed to select option: ' + error.message });
+    }
+};
+
+// 17. WORKER: Mark Order as Completed
+const completeOrder = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const userId = req.user.id;
+        const userName = req.user.name;
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        const nextStatus = 'Completed';
+        await db.query(
+            'UPDATE laundry_orders SET status = ?, completed_at = NOW() WHERE id = ?',
+            [nextStatus, orderId]
+        );
+
+        // If delivery request exists, mark as delivered
+        await db.query('UPDATE delivery_requests SET status = "delivered", actual_time = NOW() WHERE order_id = ?', [orderId]);
+
+        const isSelfPickup = (order.customer_choice === 'self_pickup' || order.status === 'Customer Pickup');
+        const specificDesc = isSelfPickup 
+            ? `Laundry picked up by the customer – Order #${order.order_number}`
+            : `Laundry delivered – Order #${order.order_number}`;
+
+        // Status history
+        await db.query(
+            'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
+            [orderId, nextStatus, `Transaction completed (${isSelfPickup ? 'Shop Self-Pickup' : 'Delivery Handover'}) by ${userName}`, userId]
+        );
+
+        // Customer notification
+        await db.query(
+            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Completed", "Your laundry transaction is completed")',
+            [order.customer_id, orderId]
+        );
+
+        // Log specific action (picked up by customer vs delivered)
+        await logActivity({
+            req,
+            actorId: userId,
+            actorName: userName,
+            actorRole: req.user.role,
+            actionType: isSelfPickup ? 'customer_picked_up' : 'laundry_delivered',
+            description: specificDesc,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: { order_number: order.order_number }
+        });
+
+        // Log overall completed
+        await logActivity({
+            req,
+            actorId: userId,
+            actorName: userName,
+            actorRole: req.user.role,
+            actionType: 'order_completed',
+            description: `Laundry completed – Order #${order.order_number}`,
+            entityType: 'order',
+            entityId: orderId,
+            outcome: 'success',
+            metadata: { order_number: order.order_number, completed_by: userName }
+        });
+
+        res.json({
+            success: true,
+            message: 'Laundry successfully marked as completed.',
+            status: nextStatus
+        });
+    } catch (error) {
+        console.error('Error completing order:', error);
+        res.status(500).json({ message: 'Failed to complete order: ' + error.message });
+    }
+};
+
+// 18. WORKER: Update Payment Status (Unpaid <-> Paid)
+const updateOrderPaymentStatus = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const { payment_status, payment_method } = req.body;
+        const workerId = req.user.id;
+        const workerName = req.user.name;
+
+        if (!payment_status || (payment_status !== 'paid' && payment_status !== 'unpaid')) {
+            return res.status(400).json({ message: 'Payment status must be either "paid" or "unpaid".' });
+        }
+
+        const [orders] = await db.query('SELECT * FROM laundry_orders WHERE id = ?', [orderId]);
+        if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const order = orders[0];
+
+        const isPaid = (payment_status === 'paid');
+        const amount = parseFloat(order.final_amount || order.total_amount || 0);
+        const pMethod = payment_method || order.payment_method || 'cash';
+
+        if (isPaid) {
+            await db.query(
+                'UPDATE laundry_orders SET payment_status = "paid", payment_collected_by = ?, payment_collected_at = NOW() WHERE id = ?',
+                [workerId, orderId]
+            );
+
+            // Record payment in payments table
+            const refNum = `PAY-${Date.now()}`;
+            await db.query(
+                'INSERT INTO payments (order_id, amount, payment_method, payment_status, reference_number, collected_by, payment_date) VALUES (?, ?, ?, "paid", ?, ?, NOW())',
+                [orderId, amount, pMethod, refNum, workerId]
+            );
+
+            // Log activity: Payment received & Payment status updated
+            await logActivity({
+                req,
+                actorId: workerId,
+                actorName: workerName,
+                actorRole: req.user.role,
+                actionType: 'payment_received',
+                description: `Payment received – ₱${amount.toFixed(2)}`,
+                entityType: 'payment',
+                entityId: orderId,
+                outcome: 'success',
+                metadata: { order_number: order.order_number, amount, reference_number: refNum }
+            });
+
+            await logActivity({
+                req,
+                actorId: workerId,
+                actorName: workerName,
+                actorRole: req.user.role,
+                actionType: 'payment_status_updated',
+                description: `Payment status updated – Order #${order.order_number}`,
+                entityType: 'order',
+                entityId: orderId,
+                outcome: 'success',
+                metadata: { order_number: order.order_number, payment_status: 'paid', worker_name: workerName }
+            });
+
+            // Customer notification
+            await db.query(
+                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Payment Received", ?)',
+                [order.customer_id, orderId, `Payment of ₱${amount.toFixed(2)} has been recorded for order ${order.order_number}.`]
+            );
+        } else {
+            await db.query(
+                'UPDATE laundry_orders SET payment_status = "unpaid", payment_collected_by = NULL, payment_collected_at = NULL WHERE id = ?',
+                [orderId]
+            );
+
+            await db.query(
+                'UPDATE payments SET payment_status = "unpaid" WHERE order_id = ?',
+                [orderId]
+            );
+
+            await logActivity({
+                req,
+                actorId: workerId,
+                actorName: workerName,
+                actorRole: req.user.role,
+                actionType: 'payment_status_updated',
+                description: `Payment status updated – Order #${order.order_number}`,
+                entityType: 'order',
+                entityId: orderId,
+                outcome: 'success',
+                metadata: { order_number: order.order_number, payment_status: 'unpaid', worker_name: workerName }
+            });
+        }
+
+        res.json({
+            success: true,
+            message: `Payment status successfully updated to ${isPaid ? 'Paid' : 'Unpaid'}.`,
+            payment_status: isPaid ? 'paid' : 'unpaid'
+        });
+    } catch (error) {
+        console.error('Error updating payment status:', error);
+        res.status(500).json({ message: 'Failed to update payment status: ' + error.message });
+    }
+};
+
 module.exports = { 
-    createOrder, 
+    createOrder,
+    createWalkInOrder,
     getOrders, 
     getOrderById, 
     approveOrder,
@@ -1258,6 +1867,11 @@ module.exports = {
     sendPriceToCustomer,
     customerWeightDecision,
     updateProcessingStage,
+    startLaundryProcessing,
+    markLaundryReady,
+    selectFulfillmentChoice,
+    completeOrder,
+    updateOrderPaymentStatus,
     getWorkflowCounts,
     getAvailableDrivers,
     updateOrderStatus, 

@@ -627,14 +627,14 @@ exports.createAdmin = async (req, res) => {
     });
 };
 
-// 8. Standard getAllUsers (Admin Only)
+// 8. Standard getAllUsers (Admin or Worker for customer list)
 exports.getAllUsers = async (req, res) => {
     try {
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ message: 'Access denied: Admin only.' });
+        const { role } = req.query;
+        if (req.user.role !== 'admin' && !(req.user.role === 'worker' && role === 'customer')) {
+            return res.status(403).json({ message: 'Access denied.' });
         }
 
-        const { role } = req.query;
         let query = 'SELECT id, name, email, role, phone, COALESCE(is_active, 1) as is_active, COALESCE(approval_status, "approved") as approval_status, created_at FROM users';
         let params = [];
         if (role) {
@@ -954,3 +954,17 @@ exports.updateProfileLocation = async (req, res) => {
         res.status(500).json({ message: 'Error saving profile location', error: error.message });
     }
 };
+
+// 13. Get all active customers for Walk-in Laundry (Admin & Worker)
+exports.getCustomers = async (req, res) => {
+    try {
+        const [customers] = await db.query(
+            'SELECT id, name, email, phone, default_address, created_at FROM users WHERE role = "customer" AND COALESCE(is_active, 1) = 1 ORDER BY name ASC'
+        );
+        res.json(customers);
+    } catch (error) {
+        console.error('Error fetching customers:', error);
+        res.status(500).json({ message: 'Error fetching customers', error: error.message });
+    }
+};
+

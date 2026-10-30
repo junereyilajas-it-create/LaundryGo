@@ -4,13 +4,12 @@ import { motion } from 'framer-motion';
 import { 
   Droplets, Truck, Clock, ShieldCheck, Sparkles, MapPin, 
   ArrowRight, Phone, Mail, ChevronRight, CheckCircle2, 
-  Sun, Moon, Menu, X, ArrowUpRight, HelpCircle, Download
+  Sun, Moon, Menu, X, ArrowUpRight, HelpCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 import { Button } from '../components/ui';
-import InstallAppModal from '../components/common/InstallAppModal';
 
 interface ServiceItem {
   id: number;
@@ -27,17 +26,6 @@ export default function LandingPage() {
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
-  const [showInstallModal, setShowInstallModal] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-
-  useEffect(() => {
-    const handleBeforeInstall = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-  }, []);
 
   useEffect(() => {
     const fetchServices = async () => {
@@ -137,14 +125,6 @@ export default function LandingPage() {
 
           {/* Header Action Buttons */}
           <div className="hidden md:flex items-center gap-3">
-            {/* Install App Button */}
-            <button
-              onClick={() => setShowInstallModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors shadow-xs"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Install App</span>
-            </button>
 
             {/* Theme Toggle */}
             <button
@@ -186,14 +166,6 @@ export default function LandingPage() {
 
           {/* Mobile Actions and Menu Button */}
           <div className="flex md:hidden items-center gap-2">
-            {/* Mobile Install App Button */}
-            <button
-              onClick={() => setShowInstallModal(true)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-sm shadow-blue-500/20"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Install</span>
-            </button>
 
             <button
               onClick={toggleTheme}
@@ -250,16 +222,6 @@ export default function LandingPage() {
               Contact
             </a>
             <div className="pt-4 border-t border-gray-100 dark:border-gray-800 flex flex-col gap-2">
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setShowInstallModal(true);
-                }}
-                className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 rounded-xl border border-blue-200 dark:border-blue-800"
-              >
-                <Download className="w-4 h-4" />
-                Install LaundriGo Web App
-              </button>
               {user ? (
                 <Button
                   variant="primary"
@@ -801,17 +763,6 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-
-      {/* PWA Install Guide Modal */}
-      <InstallAppModal
-        isOpen={showInstallModal}
-        onClose={() => setShowInstallModal(false)}
-        deferredPrompt={deferredPrompt}
-        onInstallAccepted={() => {
-          setDeferredPrompt(null);
-          setShowInstallModal(false);
-        }}
-      />
 
     </div>
   );

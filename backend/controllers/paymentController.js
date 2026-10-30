@@ -24,33 +24,78 @@ const recalculateOrderPayment = async (order_id) => {
     return status;
 };
 
-// 1. Get all payments
+// 1. Get all payments (All approved laundry requests requiring payment tracking, including paid and unpaid)
 exports.getPayments = async (req, res) => {
     try {
-        let query = `
-            SELECT p.*, 
-                   o.order_number, 
-                   o.total_amount, 
-                   u.name as customer_name,
-                   u.phone as customer_phone,
-                   cu.name as collector_name
-            FROM payments p
-            JOIN laundry_orders o ON p.order_id = o.id
-            JOIN users u ON o.customer_id = u.id
-            LEFT JOIN users cu ON p.collected_by = cu.id
-        `;
+        let whereClauses = [];
         let params = [];
         
         if (req.user.role === 'customer') {
-            query += ' WHERE o.customer_id = ?';
+            whereClauses.push('lo.customer_id = ?');
             params.push(req.user.id);
         } else if (req.user.role === 'driver') {
-            // Drivers can see payments they collected or for their assigned orders
-            query += ' WHERE p.collected_by = ?';
-            params.push(req.user.id);
+            whereClauses.push('(p.collected_by = ? OR lo.assigned_pickup_driver_id = ? OR lo.assigned_delivery_driver_id = ?)');
+            params.push(req.user.id, req.user.id, req.user.id);
+        } else {
+            // Admin & Worker: include all approved requests that need payment tracking, or any order with payment records
+            whereClauses.push('(lo.approved_at IS NOT NULL OR lo.status NOT IN ("Pending Approval", "Pending Request", "Rejected") OR p.id IS NOT NULL)');
         }
-        
-        query += ' ORDER BY p.created_at DESC';
+
+        const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+        const query = `
+            WITH RankedPayments AS (
+                SELECT p.*,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY order_id 
+                           ORDER BY 
+                               CASE WHEN payment_status IN ('paid', 'Paid (Demo)') THEN 0 ELSE 1 END,
+                               id DESC
+                       ) as rn
+                FROM payments p
+            )
+            SELECT 
+                COALESCE(p.id, 0) as id,
+                p.id as payment_id,
+                lo.id as order_id,
+                lo.order_number,
+                lo.customer_id,
+                lo.service_name,
+                lo.status as order_status,
+                lo.status,
+                lo.estimated_amount,
+                lo.final_amount,
+                lo.total_amount,
+                lo.approved_at,
+                lo.created_at as order_created_at,
+                u.name as customer_name,
+                u.phone as customer_phone,
+                u.email as customer_email,
+                COALESCE(p.payment_method, lo.payment_method, 'COD') as payment_method,
+                CASE 
+                    WHEN p.payment_status = 'Paid (Demo)' OR (p.payment_status IS NULL AND lo.payment_status = 'Paid (Demo)') THEN 'Paid (Demo)'
+                    WHEN p.payment_status = 'paid' OR (p.payment_status IS NULL AND lo.payment_status = 'paid') THEN 'Paid'
+                    WHEN p.payment_status = 'failed' OR (p.payment_status IS NULL AND lo.payment_status = 'failed') THEN 'Failed'
+                    WHEN p.payment_status = 'refunded' OR (p.payment_status IS NULL AND lo.payment_status = 'refunded') THEN 'Refunded'
+                    WHEN p.payment_status = 'pending_verification' OR (p.payment_status IS NULL AND lo.payment_status = 'pending_verification') THEN 'Pending Verification'
+                    WHEN p.payment_status IN ('pending', 'Pending', 'pending_payment', 'Pending Payment') OR (p.payment_status IS NULL AND lo.payment_status IN ('pending', 'Pending', 'pending_payment', 'Pending Payment')) THEN 'Pending Payment'
+                    WHEN lo.payment_status = 'partially_paid' THEN 'Partially Paid'
+                    ELSE 'Unpaid'
+                END as payment_status,
+                COALESCE(p.amount, (CASE WHEN lo.payment_status IN ('paid', 'Paid (Demo)') THEN COALESCE(lo.final_amount, lo.total_amount) ELSE NULL END), 0) as amount,
+                p.reference_number,
+                p.payment_date,
+                COALESCE(p.created_at, lo.created_at) as created_at,
+                COALESCE(p.is_demo, CASE WHEN lo.payment_status = 'Paid (Demo)' OR lo.payment_method = 'GCASH_DEMO' THEN 1 ELSE 0 END) as is_demo,
+                cu.name as collector_name
+            FROM laundry_orders lo
+            JOIN users u ON lo.customer_id = u.id
+            LEFT JOIN RankedPayments p ON lo.id = p.order_id AND p.rn = 1
+            LEFT JOIN users cu ON p.collected_by = cu.id
+            ${whereSql}
+            ORDER BY COALESCE(p.payment_date, p.created_at, lo.created_at) DESC
+        `;
+
         const [payments] = await db.query(query, params);
         res.json(payments);
     } catch (error) {
@@ -371,8 +416,8 @@ exports.createPayment = async (req, res) => {
             actorId: req.user.id,
             actorName: req.user.name,
             actorRole: req.user.role,
-            actionType: 'payment_recorded',
-            description: `Manual payment of ₱${floatAmount.toFixed(2)} (${payment_method}) recorded for order #${order_id}`,
+            actionType: 'payment_received',
+            description: `Payment received – ₱${floatAmount.toFixed(2)}`,
             entityType: 'payment',
             entityId: result.insertId,
             outcome: 'success',
@@ -415,8 +460,8 @@ exports.updatePayment = async (req, res) => {
             actorId: req.user.id,
             actorName: req.user.name,
             actorRole: req.user.role,
-            actionType: 'payment_updated',
-            description: `Updated payment record #${req.params.id}`,
+            actionType: 'payment_status_updated',
+            description: `Payment status updated – Order #${p[0]?.order_id || req.params.id}`,
             entityType: 'payment',
             entityId: req.params.id,
             outcome: 'success'

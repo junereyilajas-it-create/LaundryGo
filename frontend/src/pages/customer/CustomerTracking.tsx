@@ -8,6 +8,7 @@ import api from '../../services/api';
 import MultiMapComponent, { type MapMarkerData } from '../../components/map/MultiMapComponent';
 import { Button } from '../../components/ui';
 import OrderChatModal from '../../components/common/OrderChatModal';
+import StatusBadge from '../../components/common/StatusBadge';
 
 interface TrackingItem {
   id: number;
@@ -86,7 +87,25 @@ export default function CustomerTracking() {
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate live route from driver to destination when driver is "on_the_way"
+  const resolveCustomerAddress = (item: TrackingItem | null) => {
+    if (!item) return '';
+    if (item.address_line && item.address_line.trim() !== '') return item.address_line;
+    if (item.latitude && item.longitude) {
+      return item.type === 'pickup' ? 'Pinned pickup location' : 'Pinned delivery location';
+    }
+    return 'Location unavailable (No coordinates or address)';
+  };
+
+  const hasDriverGps = selectedItem && 
+    selectedItem.driver_lat !== null && selectedItem.driver_lat !== undefined &&
+    selectedItem.driver_lng !== null && selectedItem.driver_lng !== undefined &&
+    !isNaN(Number(selectedItem.driver_lat)) && !isNaN(Number(selectedItem.driver_lng));
+
+  const hasDestCoords = selectedItem &&
+    selectedItem.latitude !== null && selectedItem.longitude !== null &&
+    !isNaN(Number(selectedItem.latitude)) && !isNaN(Number(selectedItem.longitude));
+
+  // Calculate live route from driver to destination when driver is "on_the_way" and GPS is available
   useEffect(() => {
     if (!selectedItem) {
       setRouteCoordinates([]);
@@ -95,15 +114,17 @@ export default function CustomerTracking() {
     }
 
     const isOnTheWay = selectedItem.status === 'on_the_way' || selectedItem.status === 'out_for_delivery';
-    const destLat = selectedItem.latitude || 8.7845; // Default Poblacion, Lagonglong
-    const destLng = selectedItem.longitude || 124.7761;
+    const driverValid = selectedItem.driver_lat !== null && selectedItem.driver_lat !== undefined && !isNaN(Number(selectedItem.driver_lat)) &&
+                        selectedItem.driver_lng !== null && selectedItem.driver_lng !== undefined && !isNaN(Number(selectedItem.driver_lng));
+    const destValid = selectedItem.latitude !== null && selectedItem.longitude !== null &&
+                      !isNaN(Number(selectedItem.latitude)) && !isNaN(Number(selectedItem.longitude));
 
-    // Simulated driver position near Lagonglong if driver GPS is not live yet
-    const driverLat = selectedItem.driver_lat || 8.7830;
-    const driverLng = selectedItem.driver_lng || 124.7745;
+    if (isOnTheWay && driverValid && destValid) {
+      const driverLat = Number(selectedItem.driver_lat);
+      const driverLng = Number(selectedItem.driver_lng);
+      const destLat = Number(selectedItem.latitude);
+      const destLng = Number(selectedItem.longitude);
 
-    if (isOnTheWay) {
-      // Calculate OSRM route
       fetch(`https://router.project-osrm.org/route/v1/driving/${driverLng},${driverLat};${destLng},${destLat}?overview=full&geometries=geojson`)
         .then((res) => res.json())
         .then((data) => {
@@ -127,32 +148,30 @@ export default function CustomerTracking() {
     }
   }, [selectedItem]);
 
-  // Build Map Markers
+  // Build Map Markers without fabricated GPS coordinates
   const markers: MapMarkerData[] = [];
 
   if (selectedItem) {
-    const destLat = selectedItem.latitude || 8.7845;
-    const destLng = selectedItem.longitude || 124.7761;
+    if (hasDestCoords) {
+      markers.push({
+        id: 'destination',
+        lat: Number(selectedItem.latitude),
+        lng: Number(selectedItem.longitude),
+        title: `${selectedItem.type === 'pickup' ? 'Customer Pickup' : 'Customer Delivery'}: #${selectedItem.order_number}`,
+        subtitle: resolveCustomerAddress(selectedItem),
+        color: 'blue'
+      });
+    }
 
-    // Destination Pin
-    markers.push({
-      id: 'destination',
-      lat: destLat,
-      lng: destLng,
-      title: `${selectedItem.type === 'pickup' ? 'Pickup' : 'Delivery'} Destination`,
-      subtitle: selectedItem.address_line,
-      color: 'blue'
-    });
-
-    // Driver Pin ONLY when driver is actively "on_the_way" (fulfills security rule to protect driver privacy when not active)
+    // Driver Pin ONLY when driver is actively en route and has genuine live GPS coordinates
     const isOnTheWay = selectedItem.status === 'on_the_way' || selectedItem.status === 'out_for_delivery';
-    if (isOnTheWay) {
+    if (isOnTheWay && hasDriverGps) {
       markers.push({
         id: 'driver',
-        lat: selectedItem.driver_lat || 8.7830,
-        lng: selectedItem.driver_lng || 124.7745,
+        lat: Number(selectedItem.driver_lat),
+        lng: Number(selectedItem.driver_lng),
         title: `Driver: ${selectedItem.driver_name || 'En Route'}`,
-        subtitle: 'Live Position',
+        subtitle: 'Live GPS Position',
         color: 'green'
       });
     }
@@ -247,12 +266,10 @@ export default function CustomerTracking() {
                     {selectedItem.order_number}
                   </span>
                   <span className="text-xs text-gray-500 capitalize">
-                    {selectedItem.type} Task
+                    {selectedItem.type} Request
                   </span>
                 </div>
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${getStatusBadge(selectedItem.status)}`}>
-                  {selectedItem.status.replace(/_/g, ' ')}
-                </span>
+                <StatusBadge status={selectedItem.status} />
               </div>
 
               {/* Status Explanation Banner */}
@@ -262,9 +279,15 @@ export default function CustomerTracking() {
                   : 'bg-gray-50 dark:bg-gray-800/60 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-gray-800'
               }`}>
                 {isSelectedActive ? (
-                  <p className="font-medium">
-                    🚚 <strong>Driver en route:</strong> Your driver is traveling toward your address in Poblacion, Lagonglong. Live coordinates are plotted above.
-                  </p>
+                  hasDriverGps ? (
+                    <p className="font-medium">
+                      🚚 <strong>Driver en route:</strong> Your driver is traveling toward your location. Live GPS coordinates and driving route are plotted on the map.
+                    </p>
+                  ) : (
+                    <p className="font-medium text-amber-800 dark:text-amber-300">
+                      🚚 <strong>Driver en route:</strong> Your driver has been dispatched. Live GPS position is currently unavailable (awaiting driver device location access).
+                    </p>
+                  )
                 ) : selectedItem.status === 'arrived' ? (
                   <p className="font-medium text-purple-700 dark:text-purple-300">
                     📍 <strong>Driver arrived:</strong> Your driver has reached the location. Please be ready to meet them.
@@ -286,9 +309,16 @@ export default function CustomerTracking() {
                   Driver Assigned
                 </span>
                 <div className="flex justify-between items-center">
-                  <span className="font-bold text-gray-900 dark:text-white text-sm">
-                    {selectedItem.driver_name || 'Driver Assignment in Progress'}
-                  </span>
+                  <div>
+                    <span className="font-bold text-gray-900 dark:text-white text-sm block">
+                      {selectedItem.driver_name || 'Driver Assignment in Progress'}
+                    </span>
+                    {selectedItem.driver_name && (
+                      <span className="text-[10px] text-gray-400 block mt-0.5">
+                        {hasDriverGps ? '● Live GPS Tracking Active' : '○ GPS Signal Unavailable'}
+                      </span>
+                    )}
+                  </div>
                   {selectedItem.driver_phone && (
                     <a
                       href={`tel:${selectedItem.driver_phone}`}
@@ -303,12 +333,17 @@ export default function CustomerTracking() {
               {/* Destination Address */}
               <div className="space-y-1 text-xs">
                 <span className="text-gray-400 font-semibold block uppercase tracking-wider text-[10px]">
-                  Target Address
+                  {selectedItem.type === 'pickup' ? 'Confirmed Pickup Location' : 'Delivery Address'}
                 </span>
                 <p className="font-medium text-gray-800 dark:text-gray-200 flex items-start gap-1.5">
                   <MapPin className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                  <span>{selectedItem.address_line || 'Poblacion, Lagonglong'}</span>
+                  <span>{resolveCustomerAddress(selectedItem)}</span>
                 </p>
+                {selectedItem.latitude && selectedItem.longitude && (
+                  <span className="text-[10px] text-gray-400 font-mono ml-5 block">
+                    ({Number(selectedItem.latitude).toFixed(4)}, {Number(selectedItem.longitude).toFixed(4)})
+                  </span>
+                )}
               </div>
 
               {/* Chat Button */}
@@ -348,12 +383,10 @@ export default function CustomerTracking() {
                   <span className="font-mono font-bold text-xs text-gray-900 dark:text-white">
                     {item.order_number}
                   </span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${getStatusBadge(item.status)}`}>
-                    {item.status.replace(/_/g, ' ')}
-                  </span>
+                  <StatusBadge status={item.status} />
                 </div>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 capitalize">
-                  {item.type} • {item.address_line || 'Poblacion, Lagonglong'}
+                  {item.type} • {resolveCustomerAddress(item)}
                 </p>
               </div>
             ))}

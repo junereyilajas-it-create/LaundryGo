@@ -14,6 +14,7 @@ import RequestServiceModal from '../../components/common/RequestServiceModal';
 import OrderChatModal from '../../components/common/OrderChatModal';
 import MapComponent from '../../components/map/MapComponent';
 import ConfirmModal, { type ConfirmModalProps } from '../../components/common/ConfirmModal';
+import TransactionFeedbackModal from '../../components/common/TransactionFeedbackModal';
 
 interface LoadDetail {
   loadNumber: number;
@@ -79,6 +80,14 @@ interface Order {
   delivery_status?: string;
   delivery_driver_name?: string;
   delivery_driver_phone?: string;
+  is_walkin?: boolean | number;
+  customer_choice?: string;
+  processing_started_at?: string;
+  ready_at?: string;
+  completed_at?: string;
+  payment_collected_by?: number;
+  payment_collected_at?: string;
+  payment_collected_by_name?: string;
   history?: StatusHistoryItem[];
   payments?: any[];
 }
@@ -117,6 +126,25 @@ export default function CustomerOrders() {
 
   // Accessible Confirmation / Notice Modal State
   const [confirmModalConfig, setConfirmModalConfig] = useState<ConfirmModalProps | null>(null);
+
+  // Universal Transaction Feedback Modal State
+  const [feedbackModal, setFeedbackModal] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: React.ReactNode;
+    onTryAgain?: () => void;
+  }>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: ''
+  });
+
+  // Ready Order Fulfillment Choice Modal State (Delivery vs Self-Pickup)
+  const [fulfillmentModalOrder, setFulfillmentModalOrder] = useState<Order | null>(null);
+  const [selectedFulfillmentChoice, setSelectedFulfillmentChoice] = useState<'delivery' | 'self_pickup'>('delivery');
+  const [fulfillmentAddressInput, setFulfillmentAddressInput] = useState('');
 
   const openOrderDetailsById = async (orderId: number) => {
     setLoadingOrderDetails(true);
@@ -280,6 +308,40 @@ export default function CustomerOrders() {
     }
   };
 
+  // Customer Fulfillment Selection Handler (Delivery vs Self-Pickup)
+  const handleSelectFulfillment = async (orderId: number, choice: 'delivery' | 'self_pickup', address?: string) => {
+    setSubmittingDelivery(true);
+    try {
+      await api.post(`/orders/${orderId}/select-fulfillment`, {
+        choice,
+        delivery_address_text: address
+      });
+      setFulfillmentModalOrder(null);
+      fetchOrders();
+      if (detailsModalOrder?.id === orderId) {
+        openOrderDetailsById(orderId);
+      }
+      setFeedbackModal({
+        isOpen: true,
+        type: 'success',
+        title: choice === 'delivery' ? 'Delivery Selected' : 'Self-Pickup Selected',
+        message: choice === 'delivery'
+          ? 'Your laundry will be delivered to your address! Our dispatch team and driver will handle delivery.'
+          : 'Your laundry is ready for pickup! You can visit our shop at your convenience to collect your items.'
+      });
+    } catch (err: any) {
+      setFeedbackModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Fulfillment Selection Failed',
+        message: err.response?.data?.message || 'Could not record fulfillment option. Please try again.',
+        onTryAgain: () => handleSelectFulfillment(orderId, choice, address)
+      });
+    } finally {
+      setSubmittingDelivery(false);
+    }
+  };
+
   // Customer Weight Proposal Decision (Approve / Reject)
   const handleCustomerWeightDecision = async (decision: 'approve' | 'reject') => {
     if (!proposalModalOrder) return;
@@ -353,10 +415,13 @@ export default function CustomerOrders() {
       case 'Drying':
       case 'Folding':
       case 'Quality Check':
-        return 'Processing Laundry';
+        return 'Processing';
+      case 'Ready for Pickup/Delivery':
       case 'Ready for Delivery':
       case 'Ready':
-        return 'Ready for Delivery';
+        return 'Ready for Pickup/Delivery';
+      case 'Customer Pickup':
+        return 'Ready for Pickup';
       case 'Out for Delivery':
       case 'Delivery Assigned':
         return 'Out for Delivery';
@@ -381,10 +446,11 @@ export default function CustomerOrders() {
       case 'Pickup in Progress':
       case 'Driver Assigned':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200';
-      case 'Processing Laundry':
-        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200';
-      case 'Ready for Delivery':
-        return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border-indigo-200';
+      case 'Processing':
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 animate-pulse';
+      case 'Ready for Pickup/Delivery':
+      case 'Ready for Pickup':
+        return 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300 border-teal-200';
       case 'Awaiting Customer Confirmation':
         return 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300 border-rose-300 animate-pulse';
       case 'Rejected or Cancelled':
@@ -573,18 +639,18 @@ export default function CustomerOrders() {
         current: s9_current,
         requires_attention: false,
         time: s9_time,
-        note: 'The laundry is being processed.',
-        details: order.processing_stage ? `Active stage: ${order.processing_stage}` : 'Washing, drying & folding'
+        note: 'Your laundry is now being processed. Please allow approximately 2 hours. We will notify you once your laundry is ready for pickup or delivery.',
+        details: 'Washing, drying & folding combined in one processing status'
       },
       {
         num: 10,
-        label: 'Ready for Delivery',
+        label: 'Ready for Pickup / Delivery',
         done: s10_done,
         current: s10_current,
-        requires_attention: false,
+        requires_attention: !order.customer_choice && (order.status === 'Ready for Pickup/Delivery' || order.status === 'Ready'),
         time: s10_time,
-        note: 'The laundry is ready to be delivered.',
-        details: 'Cleaned, folded, and packaged for doorstep dispatch'
+        note: 'Your laundry is ready. Choose delivery or self-pickup.',
+        details: order.customer_choice === 'self_pickup' ? 'Self-Pickup selected at shop' : order.customer_choice === 'delivery' ? 'Delivery selected' : 'Cleaned & packaged. Awaiting fulfillment selection'
       },
       {
         num: 11,
@@ -781,6 +847,82 @@ export default function CustomerOrders() {
                     >
                       Review Proposal
                     </Button>
+                  </div>
+                )}
+
+                {/* PROMINENT PROCESSING STATUS BANNER */}
+                {order.status === 'Processing' && (
+                  <div 
+                    onClick={(e) => e.stopPropagation()}
+                    className="p-3.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 flex items-start gap-3 shadow-xs"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                      <Clock className="w-4 h-4 animate-spin" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-xs sm:text-sm text-blue-900 dark:text-blue-200">
+                        Laundry Processing Started
+                      </h4>
+                      <p className="text-[11px] sm:text-xs text-blue-700 dark:text-blue-300 mt-0.5 leading-relaxed">
+                        Your laundry is now being processed. Please allow approximately 2 hours. We will notify you once your laundry is ready for pickup or delivery.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* PROMINENT READY FULFILLMENT BANNER */}
+                {(order.status === 'Ready for Pickup/Delivery' || order.status === 'Ready' || order.status === 'Customer Pickup' || order.status === 'Ready for Delivery') && (
+                  <div 
+                    onClick={(e) => e.stopPropagation()}
+                    className="p-3.5 rounded-xl bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 dark:from-teal-950/40 dark:via-emerald-950/30 dark:to-cyan-950/30 border border-teal-300 dark:border-teal-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-xs sm:text-sm text-teal-900 dark:text-teal-200">
+                          Your Laundry is Ready!
+                        </h4>
+                        <div className="text-[11px] sm:text-xs text-teal-800 dark:text-teal-300 mt-0.5">
+                          {order.customer_choice === 'delivery' || order.status === 'Ready for Delivery' ? (
+                            <span>Your laundry will be delivered to: <strong>{order.delivery_address_text || order.pickup_address_text || 'Your registered address'}</strong>.</span>
+                          ) : order.customer_choice === 'self_pickup' || order.status === 'Customer Pickup' ? (
+                            <span>Your laundry is ready for pickup! You may personally collect your laundry at the shop anytime.</span>
+                          ) : (
+                            <span>Your laundry is ready. Choose your preferred option: <strong>Delivery</strong> to your address or <strong>Self-Pickup</strong> at the shop.</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {!order.customer_choice && order.status !== 'Customer Pickup' && (
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setFulfillmentModalOrder(order);
+                            setSelectedFulfillmentChoice('delivery');
+                            setFulfillmentAddressInput(order.delivery_address_text || order.pickup_address_text || '');
+                          }}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-8 px-3 gap-1 shadow-xs"
+                        >
+                          <Truck className="w-3.5 h-3.5" />
+                          Delivery
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setFulfillmentModalOrder(order);
+                            setSelectedFulfillmentChoice('self_pickup');
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3 gap-1 shadow-xs"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Self-Pickup
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1073,6 +1215,72 @@ export default function CustomerOrders() {
                 <p className="text-[11px] text-gray-500">
                   This transaction is closed. Subsequent fulfillment steps have been halted.
                 </p>
+              </div>
+            )}
+
+            {/* Processing Stage Banner in Modal */}
+            {detailsModalOrder.status === 'Processing' && (
+              <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 space-y-1.5 shadow-xs">
+                <div className="flex items-center gap-2 font-bold text-sm">
+                  <Clock className="w-4 h-4 text-blue-600 animate-spin" />
+                  Laundry Processing Started
+                </div>
+                <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
+                  Your laundry is now being processed. Please allow approximately 2 hours. We will notify you once your laundry is ready for pickup or delivery.
+                </p>
+              </div>
+            )}
+
+            {/* Ready for Pickup / Delivery Banner in Modal */}
+            {(detailsModalOrder.status === 'Ready for Pickup/Delivery' || detailsModalOrder.status === 'Ready' || detailsModalOrder.status === 'Customer Pickup' || detailsModalOrder.status === 'Ready for Delivery') && (
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 dark:from-teal-950/40 dark:via-emerald-950/30 dark:to-cyan-950/30 border border-teal-300 dark:border-teal-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-xs sm:text-sm text-teal-900 dark:text-teal-200">
+                      Your Laundry is Ready!
+                    </h4>
+                    <div className="text-[11px] sm:text-xs text-teal-800 dark:text-teal-300 mt-0.5">
+                      {detailsModalOrder.customer_choice === 'delivery' || detailsModalOrder.status === 'Ready for Delivery' ? (
+                        <span>Your laundry will be delivered to: <strong>{detailsModalOrder.delivery_address_text || detailsModalOrder.pickup_address_text || 'Your address'}</strong>.</span>
+                      ) : detailsModalOrder.customer_choice === 'self_pickup' || detailsModalOrder.status === 'Customer Pickup' ? (
+                        <span>Your laundry is ready for pickup! You may personally collect your laundry at the shop.</span>
+                      ) : (
+                        <span>Your laundry is ready. Choose your preferred option: <strong>Delivery</strong> to your address or <strong>Self-Pickup</strong> at the shop.</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {!detailsModalOrder.customer_choice && detailsModalOrder.status !== 'Customer Pickup' && (
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setFulfillmentModalOrder(detailsModalOrder);
+                        setSelectedFulfillmentChoice('delivery');
+                        setFulfillmentAddressInput(detailsModalOrder.delivery_address_text || detailsModalOrder.pickup_address_text || '');
+                      }}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-8 px-3 gap-1 shadow-xs"
+                    >
+                      <Truck className="w-3.5 h-3.5" />
+                      Delivery
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setFulfillmentModalOrder(detailsModalOrder);
+                        setSelectedFulfillmentChoice('self_pickup');
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3 gap-1 shadow-xs"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Self-Pickup
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1611,10 +1819,156 @@ export default function CustomerOrders() {
         </div>
       )}
 
+      {/* Customer Fulfillment Choice Modal (Delivery vs Self-Pickup) */}
+      {fulfillmentModalOrder && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-3xl p-6 border border-gray-200 dark:border-gray-800 shadow-2xl relative space-y-5"
+          >
+            <div className="flex justify-between items-center pb-3 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-teal-100 dark:bg-teal-950/60 text-teal-600 flex items-center justify-center">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-gray-900 dark:text-white">
+                    How would you like to receive your laundry?
+                  </h3>
+                  <p className="text-xs text-gray-400 font-mono">
+                    Order {fulfillmentModalOrder.order_number}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setFulfillmentModalOrder(null)} 
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-600 dark:text-gray-300">
+              Your laundry is ready! Please select whether you'd like your clean clothes delivered to your doorstep or if you prefer picking them up personally at our shop:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Option 1: Delivery */}
+              <div
+                onClick={() => setSelectedFulfillmentChoice('delivery')}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all space-y-1.5 ${
+                  selectedFulfillmentChoice === 'delivery'
+                    ? 'border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 ring-2 ring-indigo-500/20'
+                    : 'border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                    <Truck className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="radio"
+                    name="fulfillment_choice"
+                    checked={selectedFulfillmentChoice === 'delivery'}
+                    onChange={() => setSelectedFulfillmentChoice('delivery')}
+                    className="text-indigo-600 focus:ring-indigo-500"
+                  />
+                </div>
+                <h4 className="font-bold text-sm text-gray-900 dark:text-white">Doorstep Delivery</h4>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  A driver will deliver the laundry directly to your specified address.
+                </p>
+              </div>
+
+              {/* Option 2: Self-Pickup */}
+              <div
+                onClick={() => setSelectedFulfillmentChoice('self_pickup')}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all space-y-1.5 ${
+                  selectedFulfillmentChoice === 'self_pickup'
+                    ? 'border-emerald-600 bg-emerald-50/70 dark:bg-emerald-950/40 ring-2 ring-emerald-500/20'
+                    : 'border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="radio"
+                    name="fulfillment_choice"
+                    checked={selectedFulfillmentChoice === 'self_pickup'}
+                    onChange={() => setSelectedFulfillmentChoice('self_pickup')}
+                    className="text-emerald-600 focus:ring-emerald-500"
+                  />
+                </div>
+                <h4 className="font-bold text-sm text-gray-900 dark:text-white">Self-Pickup</h4>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  Personally collect your fresh laundry at the LaundriGo laundry shop.
+                </p>
+              </div>
+            </div>
+
+            {/* If Delivery chosen, prompt address confirmation */}
+            {selectedFulfillmentChoice === 'delivery' && (
+              <div className="space-y-1.5 pt-1">
+                <label className="font-semibold text-xs text-gray-700 dark:text-gray-300">
+                  Confirm Delivery Address (Poblacion, Lagonglong)
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Zone 2, Poblacion, Lagonglong"
+                  value={fulfillmentAddressInput}
+                  onChange={(e) => setFulfillmentAddressInput(e.target.value)}
+                  className="w-full p-2.5 text-xs bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setFulfillmentModalOrder(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={submittingDelivery || (selectedFulfillmentChoice === 'delivery' && !fulfillmentAddressInput.trim())}
+                onClick={() => handleSelectFulfillment(
+                  fulfillmentModalOrder.id,
+                  selectedFulfillmentChoice,
+                  fulfillmentAddressInput.trim()
+                )}
+                className={`font-bold text-white shadow-sm ${
+                  selectedFulfillmentChoice === 'delivery'
+                    ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
+                    : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20'
+                }`}
+              >
+                {submittingDelivery ? 'Saving...' : 'Confirm Choice'}
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
       {/* Accessible Confirmation / Notice Modal */}
       {confirmModalConfig && (
         <ConfirmModal {...confirmModalConfig} />
       )}
+
+      {/* Universal Transaction Feedback Modal */}
+      <TransactionFeedbackModal
+        isOpen={feedbackModal.isOpen}
+        type={feedbackModal.type}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+        onClose={() => setFeedbackModal((prev) => ({ ...prev, isOpen: false }))}
+        onTryAgain={feedbackModal.onTryAgain}
+      />
 
     </div>
   );

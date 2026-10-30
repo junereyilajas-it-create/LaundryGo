@@ -130,6 +130,10 @@ async function ensureDatabaseSchema() {
         const migrateActivityLogs = require('./migrations/migrate_activity_logs');
         await migrateActivityLogs();
 
+        // 7. Ensure walk-in and workflow enhancement schema
+        const updateWalkinAndWorkflowSchema = require('./migrations/update_walkin_and_workflow');
+        await updateWalkinAndWorkflowSchema();
+
         console.log('✓ Database schema verified and synchronized.');
     } catch (err) {
         console.warn('Notice: Non-critical schema synchronization warning:', err.message);

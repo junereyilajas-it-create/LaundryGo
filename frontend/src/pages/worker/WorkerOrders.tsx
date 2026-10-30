@@ -11,6 +11,9 @@ import { Badge, Button } from '../../components/ui';
 import OrderChatModal from '../../components/common/OrderChatModal';
 import ConfirmModal, { type ConfirmModalProps } from '../../components/common/ConfirmModal';
 import { calculateLaundryPricing, type PricingResult } from '../../lib/pricingCalculator';
+import StatusBadge from '../../components/common/StatusBadge';
+import AddCustomerLaundryModal from '../../components/common/AddCustomerLaundryModal';
+import TransactionFeedbackModal from '../../components/common/TransactionFeedbackModal';
 
 interface LoadDetail {
   loadNumber: number;
@@ -76,6 +79,14 @@ interface Order {
   delivery_longitude?: number | string | null;
   pickup_address_text?: string;
   delivery_address_text?: string;
+  is_walkin?: boolean | number;
+  customer_choice?: string;
+  processing_started_at?: string;
+  ready_at?: string;
+  completed_at?: string;
+  payment_collected_by?: number;
+  payment_collected_at?: string;
+  payment_collected_by_name?: string;
   history?: StatusHistoryItem[];
 }
 
@@ -88,20 +99,19 @@ interface DriverOption {
   active_deliveries: number;
 }
 
-const WORKFLOW_TABS = [
+const ORDER_CATEGORIES = [
   { id: 'all', label: 'All Orders' },
   { id: 'Pending Approval', label: 'Pending Approval' },
   { id: 'Approved', label: 'Approved' },
-  { id: 'Awaiting Pickup Assignment', label: 'Awaiting Pickup' },
   { id: 'Driver Assigned', label: 'Driver Assigned' },
   { id: 'Pickup in Progress', label: 'Pickup in Progress' },
-  { id: 'Laundry Received', label: 'Laundry Received' },
-  { id: 'Awaiting Customer Approval', label: 'Awaiting Approval' },
+  { id: 'Picked Up', label: 'Picked Up' },
+  { id: 'Weighing', label: 'Weighing / Awaiting Final Price' },
   { id: 'Processing', label: 'Processing' },
-  { id: 'Ready for Delivery', label: 'Ready for Delivery' },
-  { id: 'Delivery in Progress', label: 'Delivery in Progress' },
+  { id: 'Ready for Pickup/Delivery', label: 'Ready for Pickup / Delivery' },
+  { id: 'Out for Delivery', label: 'Out for Delivery' },
   { id: 'Completed', label: 'Completed' },
-  { id: 'Cancelled', label: 'Cancelled / Rejected' }
+  { id: 'Cancelled', label: 'Cancelled' }
 ];
 
 export default function WorkerOrders() {
@@ -111,6 +121,23 @@ export default function WorkerOrders() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+  
+  // Add Walk-in Customer Laundry Modal State
+  const [isAddLaundryModalOpen, setIsAddLaundryModalOpen] = useState(false);
+
+  // Accessible Action Confirmation & Feedback Modal State
+  const [feedbackModal, setFeedbackModal] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: React.ReactNode;
+    onTryAgain?: () => void;
+  }>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: ''
+  });
   
   // Detailed Order Management Modal State
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -188,7 +215,12 @@ export default function WorkerOrders() {
       setSelectedOrder(data);
     } catch (error) {
       console.error('Error loading order details:', error);
-      alert('Could not load complete order details.');
+      setFeedbackModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Could Not Load Order',
+        message: 'Could not load complete order details from server. Please try again.'
+      });
     } finally {
       setModalLoading(false);
     }
@@ -199,6 +231,106 @@ export default function WorkerOrders() {
       await openOrderDetail(selectedOrder.id);
     }
     fetchOrdersAndCounts(true);
+  };
+
+  // Start Processing Handler
+  const handleStartProcessing = async (orderId: number) => {
+    setActionInProgress(true);
+    try {
+      await api.put(`/orders/${orderId}/start-processing`);
+      await refreshCurrentOrder();
+      setFeedbackModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Processing Started',
+        message: 'Laundry order is now in processing. The customer has been notified with the approximately 2-hour timeline.'
+      });
+    } catch (err: any) {
+      setFeedbackModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Failed to Start Processing',
+        message: err.response?.data?.message || 'Could not update laundry to Processing status.',
+        onTryAgain: () => handleStartProcessing(orderId)
+      });
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
+  // Mark Laundry as Ready Handler
+  const handleMarkReady = async (orderId: number) => {
+    setActionInProgress(true);
+    try {
+      await api.put(`/orders/${orderId}/mark-ready`);
+      await refreshCurrentOrder();
+      setFeedbackModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Laundry Marked as Ready',
+        message: 'Laundry marked as Ready for Pickup/Delivery. Customer has been notified to choose Delivery or Self-Pickup.'
+      });
+    } catch (err: any) {
+      setFeedbackModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Failed to Mark Ready',
+        message: err.response?.data?.message || 'Could not mark laundry as ready.',
+        onTryAgain: () => handleMarkReady(orderId)
+      });
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
+  // Mark Order as Completed Handler
+  const handleCompleteOrder = async (orderId: number) => {
+    setActionInProgress(true);
+    try {
+      await api.put(`/orders/${orderId}/complete`);
+      await refreshCurrentOrder();
+      setFeedbackModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Order Completed',
+        message: 'Laundry order has been successfully marked as Completed. Customer notification recorded.'
+      });
+    } catch (err: any) {
+      setFeedbackModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Failed to Complete Order',
+        message: err.response?.data?.message || 'Could not complete laundry transaction.',
+        onTryAgain: () => handleCompleteOrder(orderId)
+      });
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
+  // Update Payment Status Handler (Unpaid <-> Paid)
+  const handleUpdatePaymentStatus = async (orderId: number, newStatus: 'paid' | 'unpaid') => {
+    setActionInProgress(true);
+    try {
+      await api.put(`/orders/${orderId}/payment-status`, { payment_status: newStatus });
+      await refreshCurrentOrder();
+      setFeedbackModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Payment Status Updated',
+        message: `Order payment has been marked as ${newStatus.toUpperCase()}.${newStatus === 'paid' ? ' Payment timestamp and recording worker have been saved.' : ''}`
+      });
+    } catch (err: any) {
+      setFeedbackModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Payment Update Failed',
+        message: err.response?.data?.message || 'Failed to update payment status.',
+        onTryAgain: () => handleUpdatePaymentStatus(orderId, newStatus)
+      });
+    } finally {
+      setActionInProgress(false);
+    }
   };
 
   // 1. Worker: Approve Request
@@ -632,46 +764,57 @@ export default function WorkerOrders() {
     });
   };
 
+  const matchesCategory = (order: Order, categoryId: string) => {
+    const st = (order.status || order.current_status || '').trim();
+    switch (categoryId) {
+      case 'all':
+        return true;
+      case 'Pending Approval':
+        return st === 'Pending Approval' || st === 'Pending Request' || st === 'Pending';
+      case 'Approved':
+        return st === 'Approved' || st === 'Awaiting Pickup Assignment' || st === 'Confirmed';
+      case 'Driver Assigned':
+        return st === 'Driver Assigned' || st === 'Pickup Scheduled';
+      case 'Pickup in Progress':
+        return st === 'Pickup in Progress' || st === 'on_the_way';
+      case 'Picked Up':
+        return st === 'Picked Up' || st === 'Laundry Received' || st === 'picked_up';
+      case 'Weighing':
+        return st === 'Weighing' || st === 'Awaiting Customer Approval' || st === 'Awaiting Customer Confirmation';
+      case 'Processing':
+        return st === 'Processing' || st === 'Washing' || st === 'Drying' || st === 'Folding' || st === 'Quality Check';
+      case 'Ready for Pickup/Delivery':
+      case 'Ready for Delivery':
+        return st === 'Ready for Pickup/Delivery' || st === 'Ready for Delivery' || st === 'Ready' || st === 'Customer Pickup';
+      case 'Out for Delivery':
+        return st === 'Out for Delivery' || st === 'Delivery in Progress' || st === 'Delivery Assigned' || st === 'out_for_delivery';
+      case 'Completed':
+        return st === 'Completed' || st === 'Delivered' || st === 'delivered';
+      case 'Cancelled':
+        return st === 'Cancelled' || st === 'Rejected' || st === 'Customer Rejected Weight Proposal';
+      default:
+        return st === categoryId;
+    }
+  };
+
+  const getCategoryCount = (categoryId: string) => {
+    if (categoryId === 'all') return orders.length;
+    return orders.filter((o) => matchesCategory(o, categoryId)).length;
+  };
+
   // Filtered orders logic
   const filteredOrders = orders.filter((order) => {
     const effectiveStatus = order.status || order.current_status || '';
-    
-    // Tab filter matching
-    let matchesTab = true;
-    if (activeTab === 'all') {
-      matchesTab = true;
-    } else if (activeTab === 'Pending Approval') {
-      matchesTab = effectiveStatus === 'Pending Approval' || effectiveStatus === 'Pending Request';
-    } else if (activeTab === 'Approved') {
-      matchesTab = effectiveStatus === 'Approved';
-    } else if (activeTab === 'Awaiting Pickup Assignment') {
-      matchesTab = effectiveStatus === 'Awaiting Pickup Assignment';
-    } else if (activeTab === 'Driver Assigned') {
-      matchesTab = effectiveStatus === 'Driver Assigned' || effectiveStatus === 'Pickup Scheduled';
-    } else if (activeTab === 'Pickup in Progress') {
-      matchesTab = effectiveStatus === 'Pickup in Progress';
-    } else if (activeTab === 'Laundry Received') {
-      matchesTab = effectiveStatus === 'Laundry Received' || effectiveStatus === 'Picked Up';
-    } else if (activeTab === 'Awaiting Customer Approval') {
-      matchesTab = effectiveStatus === 'Awaiting Customer Approval';
-    } else if (activeTab === 'Processing') {
-      matchesTab = effectiveStatus === 'Processing' || effectiveStatus === 'Washing' || effectiveStatus === 'Drying' || effectiveStatus === 'Folding';
-    } else if (activeTab === 'Ready for Delivery') {
-      matchesTab = effectiveStatus === 'Ready for Delivery' || effectiveStatus === 'Ready';
-    } else if (activeTab === 'Delivery in Progress') {
-      matchesTab = effectiveStatus === 'Delivery Assigned' || effectiveStatus === 'Out for Delivery';
-    } else if (activeTab === 'Completed') {
-      matchesTab = effectiveStatus === 'Delivered' || effectiveStatus === 'Completed';
-    } else if (activeTab === 'Cancelled') {
-      matchesTab = effectiveStatus === 'Cancelled' || effectiveStatus === 'Customer Rejected Weight Proposal';
-    }
+    const matchesTab = matchesCategory(order, activeTab);
 
     // Search term matching
+    const sTerm = searchTerm.toLowerCase().trim();
     const matchesSearch = 
-      order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      effectiveStatus.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (order.service_name || order.service_type || '').toLowerCase().includes(searchTerm.toLowerCase());
+      !sTerm ||
+      order.order_number.toLowerCase().includes(sTerm) ||
+      order.customer_name.toLowerCase().includes(sTerm) ||
+      effectiveStatus.toLowerCase().includes(sTerm) ||
+      (order.service_name || order.service_type || '').toLowerCase().includes(sTerm);
 
     return matchesTab && matchesSearch;
   });
@@ -685,9 +828,12 @@ export default function WorkerOrders() {
       case 'Washing':
       case 'Drying':
       case 'Folding':
+      case 'Quality Check':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 border-blue-300 animate-pulse';
+      case 'Ready for Pickup/Delivery':
       case 'Ready for Delivery':
       case 'Ready':
+      case 'Customer Pickup':
         return 'bg-teal-100 text-teal-800 dark:bg-teal-950/50 dark:text-teal-300 border-teal-300';
       case 'Awaiting Customer Approval':
         return 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border-amber-300 animate-bounce';
@@ -707,7 +853,8 @@ export default function WorkerOrders() {
     switch(st) {
       case 'Pending Approval':
       case 'Pending Request':
-        return { label: 'Review & Approve', color: 'bg-blue-600 text-white' };
+      case 'Pending':
+        return { label: 'Start Processing', color: 'bg-blue-600 text-white' };
       case 'Approved':
       case 'Awaiting Pickup Assignment':
         return { label: 'Assign Driver', color: 'bg-indigo-600 text-white' };
@@ -717,15 +864,25 @@ export default function WorkerOrders() {
       case 'Picked Up':
         return { label: 'Confirm Receipt', color: 'bg-purple-600 text-white' };
       case 'Laundry Received':
-        return { label: 'Weigh Laundry', color: 'bg-amber-600 text-white' };
+        return { label: 'Start Processing', color: 'bg-amber-600 text-white' };
       case 'Awaiting Customer Approval':
         return { label: 'Awaiting Customer', color: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' };
       case 'Customer Rejected Weight Proposal':
         return { label: 'Resolve Rejection', color: 'bg-red-600 text-white' };
       case 'Processing':
-        return { label: `Advance (${order.processing_stage || 'Washing'})`, color: 'bg-blue-600 text-white' };
+        return { label: 'Mark as Ready', color: 'bg-emerald-600 text-white' };
+      case 'Ready for Pickup/Delivery':
+      case 'Ready':
       case 'Ready for Delivery':
-        return { label: 'Assign Delivery', color: 'bg-emerald-600 text-white' };
+        if (order.customer_choice === 'self_pickup') {
+          return { label: 'Mark Completed', color: 'bg-emerald-600 text-white' };
+        }
+        if (order.customer_choice === 'delivery' || st === 'Ready for Delivery') {
+          return { label: 'Assign Delivery', color: 'bg-indigo-600 text-white' };
+        }
+        return { label: 'Awaiting Choice', color: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' };
+      case 'Customer Pickup':
+        return { label: 'Mark Completed', color: 'bg-emerald-600 text-white' };
       case 'Delivery Assigned':
       case 'Out for Delivery':
         return { label: 'Delivery En Route', color: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' };
@@ -752,48 +909,51 @@ export default function WorkerOrders() {
           </p>
         </div>
 
-        <button
-          onClick={() => fetchOrdersAndCounts()}
-          className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-        >
-          <RefreshCw className="w-4 h-4 text-blue-600" />
-          Refresh Orders
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => fetchOrdersAndCounts()}
+            className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4 text-blue-600" />
+            Refresh Orders
+          </button>
+
+          <Button
+            onClick={() => setIsAddLaundryModalOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-2 px-4 py-2 rounded-xl shadow-md shadow-emerald-600/20 text-xs sm:text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add Customer Laundry
+          </Button>
+        </div>
       </div>
 
-      {/* Workflow Tabs / Filters Bar */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 custom-scrollbar">
-        {WORKFLOW_TABS.map((tab) => {
-          const count = tab.id === 'all' ? (tabCounts['all'] || orders.length) : (tabCounts[tab.id] || 0);
-          const isSelected = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                isSelected
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                  : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-800'
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                  isSelected
-                    ? 'bg-white/20 text-white'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'
-                }`}
-              >
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Category Dropdown & Search Controls */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-gray-900 p-3.5 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
+        
+        {/* Category Dropdown Filter */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-bold text-gray-500 dark:text-gray-400 shrink-0">
+            Category:
+          </label>
+          <select
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value)}
+            className="w-full sm:w-auto px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+          >
+            {ORDER_CATEGORIES.map((cat) => {
+              const count = getCategoryCount(cat.id);
+              return (
+                <option key={cat.id} value={cat.id}>
+                  {cat.label} ({count})
+                </option>
+              );
+            })}
+          </select>
+        </div>
 
-      {/* Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-gray-900 p-3 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
-        <div className="relative flex-1">
+        {/* Search Bar */}
+        <div className="relative flex-1 sm:max-w-md">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
           <input
             type="text"
@@ -803,6 +963,7 @@ export default function WorkerOrders() {
             className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white"
           />
         </div>
+
         <div className="text-xs text-gray-500 self-center sm:self-auto px-2">
           Showing <strong>{filteredOrders.length}</strong> of {orders.length} orders
         </div>
@@ -897,9 +1058,7 @@ export default function WorkerOrders() {
 
                         {/* Status & Assigned Driver */}
                         <td className="py-3.5 px-4">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold border ${getStatusBadgeVariant(effectiveStatus)}`}>
-                            {effectiveStatus}
-                          </span>
+                          <StatusBadge status={effectiveStatus} type="order" />
                           {(order.pickup_driver_name || order.delivery_driver_name) && (
                             <span className="text-[10px] text-gray-500 dark:text-gray-400 block mt-0.5 flex items-center gap-1">
                               <Truck className="w-3 h-3 text-indigo-500" />
@@ -975,9 +1134,7 @@ export default function WorkerOrders() {
                     </div>
 
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-gray-100 dark:border-gray-800 text-xs">
-                      <span className={`px-2 py-0.5 rounded-full font-bold border text-[11px] ${getStatusBadgeVariant(effectiveStatus)}`}>
-                        {effectiveStatus}
-                      </span>
+                      <StatusBadge status={effectiveStatus} type="order" />
                       <span className={`px-2 py-0.5 rounded-lg font-bold text-[11px] ${nextAction.color}`}>
                         {nextAction.label}
                       </span>
@@ -1059,13 +1216,62 @@ export default function WorkerOrders() {
                 </div>
               )}
 
+              {/* Processing Stage Banner */}
+              {selectedOrder.status === 'Processing' && (
+                <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 space-y-1.5 shadow-xs">
+                  <div className="flex items-center gap-2 font-bold text-sm">
+                    <Clock className="w-4 h-4 text-blue-600 animate-spin" />
+                    Laundry In Process (Estimated 2 Hours)
+                  </div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Washing, drying, folding, and quality check are actively underway under one simplified status. Once finished, click <strong>Mark as Ready</strong> to notify the customer.
+                  </p>
+                </div>
+              )}
+
+              {/* Ready for Pickup/Delivery Banner */}
+              {(selectedOrder.status === 'Ready for Pickup/Delivery' || selectedOrder.status === 'Ready' || selectedOrder.status === 'Ready for Delivery' || selectedOrder.status === 'Customer Pickup') && (
+                <div className="p-4 rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 text-teal-900 dark:text-teal-200 space-y-1.5 shadow-xs">
+                  <div className="flex items-center gap-2 font-bold text-sm">
+                    <CheckCircle2 className="w-4 h-4 text-teal-600" />
+                    Laundry Ready for Customer
+                  </div>
+                  <div className="text-xs text-teal-800 dark:text-teal-300">
+                    {selectedOrder.customer_choice === 'delivery' || selectedOrder.status === 'Ready for Delivery' ? (
+                      <span className="font-semibold text-indigo-700 dark:text-indigo-300 block">
+                        🚚 Customer Selected: <strong>Doorstep Delivery</strong> to {selectedOrder.delivery_address_text || selectedOrder.pickup_address_text || 'Customer address'}.
+                      </span>
+                    ) : selectedOrder.customer_choice === 'self_pickup' || selectedOrder.status === 'Customer Pickup' ? (
+                      <span className="font-semibold text-emerald-700 dark:text-emerald-300 block">
+                        🏪 Customer Selected: <strong>Self-Pickup</strong>. Awaiting customer to collect items at shop.
+                      </span>
+                    ) : (
+                      <span className="italic block">
+                        ⏳ Awaiting customer selection: Customer has been notified to choose Delivery or Self-Pickup.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Grid: Customer Details & Addresses */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Customer Details */}
                 <div className="p-4 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800 space-y-2">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400 block">
-                    Customer Information
-                  </span>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400 block">
+                      Customer Information
+                    </span>
+                    {selectedOrder.is_walkin ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300">
+                        Walk-in Laundry
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-300">
+                        Online Request
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
                     <User className="w-4 h-4 text-blue-600" />
                     <span className="font-bold text-gray-900 dark:text-white">{selectedOrder.customer_name}</span>
@@ -1081,9 +1287,29 @@ export default function WorkerOrders() {
 
                 {/* Preferred Schedule & Payment Info */}
                 <div className="p-4 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800 space-y-2">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400 block">
-                    Schedule & Payment Method
-                  </span>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400 block">
+                      Schedule & Payment
+                    </span>
+                    {/* Worker Payment Status Toggle */}
+                    <button
+                      type="button"
+                      disabled={actionInProgress}
+                      onClick={() => handleUpdatePaymentStatus(
+                        selectedOrder.id,
+                        (selectedOrder.payment_status === 'paid' || selectedOrder.payment_status === 'Paid (Demo)') ? 'unpaid' : 'paid'
+                      )}
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border transition-all ${
+                        selectedOrder.payment_status === 'paid' || selectedOrder.payment_status === 'Paid (Demo)'
+                          ? 'border-amber-300 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40'
+                          : 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
+                      }`}
+                    >
+                      {selectedOrder.payment_status === 'paid' || selectedOrder.payment_status === 'Paid (Demo)'
+                        ? 'Set as Unpaid'
+                        : 'Mark as Paid'}
+                    </button>
+                  </div>
                   <div className="flex items-center gap-2 text-gray-800 dark:text-gray-200 text-xs">
                     <Calendar className="w-4 h-4 text-indigo-600" />
                     <span>{selectedOrder.preferred_date || 'Today'} ({selectedOrder.preferred_time || 'Standard'})</span>
@@ -1098,6 +1324,12 @@ export default function WorkerOrders() {
                       {selectedOrder.payment_status || 'Pending'}
                     </span>
                   </div>
+                  {selectedOrder.payment_collected_at && (
+                    <div className="text-[10px] text-emerald-600 dark:text-emerald-400 pt-1 border-t border-gray-200/50 dark:border-gray-700/50">
+                      Paid on {new Date(selectedOrder.payment_collected_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {selectedOrder.payment_collected_by_name ? ` • Processed by ${selectedOrder.payment_collected_by_name}` : ''}
+                    </div>
+                  )}
                   <div className="pt-2 border-t border-gray-200/60 dark:border-gray-700/60 space-y-1">
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-gray-500">Preliminary Estimate:</span>
@@ -1396,65 +1628,56 @@ export default function WorkerOrders() {
                   </Button>
                 )}
 
-                {/* 5. STAGE: Processing -> Advance Stages */}
+                {/* 5. STAGE: Processing -> Simplified One-Status Mark as Ready */}
                 {selectedOrder.status === 'Processing' && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 font-semibold">
-                      Current Stage: <strong>{selectedOrder.processing_stage || 'Washing'}</strong>
-                    </span>
-                    {selectedOrder.processing_stage === 'Washing' && (
+                  <Button
+                    size="sm"
+                    onClick={() => handleMarkReady(selectedOrder.id)}
+                    disabled={actionInProgress}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-sm"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    Mark as Ready
+                  </Button>
+                )}
+
+                {/* 6. STAGE: Ready for Pickup/Delivery -> Assign Delivery Driver or Mark Completed */}
+                {(selectedOrder.status === 'Ready for Pickup/Delivery' || selectedOrder.status === 'Ready for Delivery' || selectedOrder.status === 'Ready' || selectedOrder.status === 'Customer Pickup') && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedOrder.customer_choice !== 'self_pickup' && (
                       <Button
                         size="sm"
-                        onClick={() => handleAdvanceProcessingStage('Drying')}
+                        onClick={() => openAssignDriverModal('delivery')}
                         disabled={actionInProgress}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold flex items-center gap-1.5"
                       >
-                        Advance to Drying
+                        <Truck className="w-4 h-4" />
+                        Assign Delivery Driver
                       </Button>
                     )}
-                    {selectedOrder.processing_stage === 'Drying' && (
-                      <Button
-                        size="sm"
-                        onClick={() => handleAdvanceProcessingStage('Folding')}
-                        disabled={actionInProgress}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold"
-                      >
-                        Advance to Folding
-                      </Button>
-                    )}
-                    {selectedOrder.processing_stage === 'Folding' && (
-                      <Button
-                        size="sm"
-                        onClick={() => handleAdvanceProcessingStage('Quality Check')}
-                        disabled={actionInProgress}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold"
-                      >
-                        Advance to Quality Check
-                      </Button>
-                    )}
-                    {selectedOrder.processing_stage === 'Quality Check' && (
-                      <Button
-                        size="sm"
-                        onClick={() => handleAdvanceProcessingStage('Ready for Delivery')}
-                        disabled={actionInProgress}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-                      >
-                        Mark Ready for Delivery
-                      </Button>
-                    )}
+
+                    <Button
+                      size="sm"
+                      onClick={() => handleCompleteOrder(selectedOrder.id)}
+                      disabled={actionInProgress}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-sm"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Mark as Completed
+                    </Button>
                   </div>
                 )}
 
-                {/* 6. STAGE: Ready for Delivery -> Assign Delivery Driver */}
-                {selectedOrder.status === 'Ready for Delivery' && (
+                {/* 7. STAGE: Out for Delivery or Delivered -> Confirm & Complete */}
+                {(selectedOrder.status === 'Delivered' || selectedOrder.status === 'Out for Delivery') && (
                   <Button
                     size="sm"
-                    onClick={() => openAssignDriverModal('delivery')}
+                    onClick={() => handleCompleteOrder(selectedOrder.id)}
                     disabled={actionInProgress}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-sm"
                   >
-                    <Truck className="w-4 h-4" />
-                    Assign Delivery Driver
+                    <CheckCircle2 className="w-4 h-4" />
+                    Confirm & Complete
                   </Button>
                 )}
 
@@ -1762,6 +1985,39 @@ export default function WorkerOrders() {
       {confirmModalConfig && (
         <ConfirmModal {...confirmModalConfig} />
       )}
+
+      {/* Add Walk-in Customer Laundry Modal */}
+      <AddCustomerLaundryModal
+        isOpen={isAddLaundryModalOpen}
+        onClose={() => setIsAddLaundryModalOpen(false)}
+        onSuccess={(result: any) => {
+          fetchOrdersAndCounts();
+          setFeedbackModal({
+            isOpen: true,
+            type: 'success',
+            title: 'Walk-in Laundry Saved',
+            message: `Walk-in laundry ${result?.order?.order_number || ''} successfully registered! Initial status is set to Pending and payment to ${result?.order?.payment_status?.toUpperCase() || 'UNPAID'}.`
+          });
+        }}
+        onError={(errorMsg: string) => {
+          setFeedbackModal({
+            isOpen: true,
+            type: 'error',
+            title: 'Failed to Save Walk-in Laundry',
+            message: errorMsg || 'An error occurred while saving the walk-in transaction.'
+          });
+        }}
+      />
+
+      {/* Universal Transaction Feedback Modal */}
+      <TransactionFeedbackModal
+        isOpen={feedbackModal.isOpen}
+        type={feedbackModal.type}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+        onClose={() => setFeedbackModal((prev) => ({ ...prev, isOpen: false }))}
+        onTryAgain={feedbackModal.onTryAgain}
+      />
 
     </div>
   );

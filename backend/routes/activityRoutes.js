@@ -96,7 +96,7 @@ router.get('/', authenticateToken, authorizeRole('admin', 'worker'), async (req,
 // GET /api/activities/recent - Lightweight recent activities for dashboard widget
 router.get('/recent', authenticateToken, authorizeRole('admin', 'worker'), async (req, res) => {
     try {
-        const limit = parseInt(req.query.limit) || 6;
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 15));
         const [activities] = await db.query(
             `SELECT id, actor_id, actor_name, actor_role, action_type, description, entity_type, entity_id, outcome, metadata, created_at 
              FROM activity_logs 

@@ -161,6 +161,57 @@ export default function CustomerDashboard() {
         </div>
       </div>
 
+      {/* Active Processing / Ready Orders Banner */}
+      {orders.some((o) => o.status === 'Processing') && (
+        <div 
+          onClick={() => {
+            const pOrder = orders.find((o) => o.status === 'Processing');
+            if (pOrder) navigate(`/customer/orders?orderId=${pOrder.id}`);
+          }}
+          className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 flex items-start gap-3 shadow-xs cursor-pointer hover:border-blue-400 transition-colors"
+        >
+          <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+            <Clock className="w-5 h-5 animate-spin" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-sm">Laundry In Process</h4>
+              <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-1">
+                View Order <ArrowRight className="w-3.5 h-3.5" />
+              </span>
+            </div>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
+              Your laundry is now being processed. Please allow approximately 2 hours. We will notify you once your laundry is ready for pickup or delivery.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {orders.some((o) => o.status === 'Ready for Pickup/Delivery' || o.status === 'Ready' || o.status === 'Customer Pickup') && (
+        <div 
+          onClick={() => {
+            const rOrder = orders.find((o) => o.status === 'Ready for Pickup/Delivery' || o.status === 'Ready' || o.status === 'Customer Pickup');
+            if (rOrder) navigate(`/customer/orders?orderId=${rOrder.id}`);
+          }}
+          className="p-4 rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 text-teal-900 dark:text-teal-200 flex items-start gap-3 shadow-xs cursor-pointer hover:border-teal-400 transition-colors"
+        >
+          <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-sm">Your Laundry is Ready!</h4>
+              <span className="text-xs text-teal-600 dark:text-teal-400 font-semibold flex items-center gap-1">
+                Choose Option <ArrowRight className="w-3.5 h-3.5" />
+              </span>
+            </div>
+            <p className="text-xs text-teal-700 dark:text-teal-300 mt-0.5">
+              Your laundry is ready. Choose delivery or self-pickup to complete your service.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Quick Action Shortcuts Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div 

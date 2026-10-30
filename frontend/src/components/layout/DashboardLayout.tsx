@@ -5,10 +5,9 @@ import { useTheme } from '../../context/ThemeContext';
 import api from '../../services/api';
 import { 
   LayoutDashboard, Map, Plus, Menu, X, Bell, LogOut, Sun, Moon, Droplets,
-  Package, Users, Truck, DollarSign, User, Settings, Download, ExternalLink,
+  Package, Users, Truck, DollarSign, User, Settings, ExternalLink,
   BarChart3, Trash2, Check, ArrowRight, Smartphone
 } from 'lucide-react';
-import InstallAppModal from '../common/InstallAppModal';
 import MobilePreviewModal from '../common/MobilePreviewModal';
 
 interface NavItem {
@@ -35,43 +34,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isDesktopOpen, setIsDesktopOpen] = useState(true);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
+  const notifRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // PWA Install Prompt State
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isInstallable, setIsInstallable] = useState(false);
-  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
   const [previewDevice, setPreviewDevice] = useState<'android' | 'ios'>('ios');
-
-  const notifRef = useRef<HTMLDivElement>(null);
-  const profileRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (user) {
-      fetchNotifications();
-      const interval = setInterval(fetchNotifications, 5000); // 5s live polling
-      return () => clearInterval(interval);
-    }
-  }, [user]);
-
-  // Capture PWA install prompt
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setIsInstallable(true);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-  }, []);
-
-  const handleInstallClick = () => {
-    setIsInstallModalOpen(true);
-  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -317,17 +288,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             })}
           </div>
 
-          {/* Sidebar Footer with PWA Install Prompt */}
+          {/* Sidebar Footer */}
           <div className="p-3 border-t border-gray-200 dark:border-gray-800 space-y-2">
-            {isInstallable && isDesktopOpen && (
-              <button
-                onClick={handleInstallClick}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 border border-blue-200 dark:border-blue-800 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                Install LaundriGo App
-              </button>
-            )}
 
             <Link
               to="/"
@@ -372,17 +334,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
             {/* Right Controls */}
             <div className="flex items-center gap-2 sm:gap-3">
-              
-              {/* Install App Button - Always clearly visible near top on both desktop and mobile */}
-              <button
-                onClick={handleInstallClick}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-700 to-blue-600 hover:from-blue-800 hover:to-blue-700 text-white text-xs font-bold shadow-sm shadow-blue-500/20 active:scale-95 transition-all"
-                title="Install LaundriGo App (PWA)"
-              >
-                <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                <span className="hidden sm:inline">Install App</span>
-                <span className="sm:hidden text-[11px]">Install</span>
-              </button>
 
               {/* Mobile Preview Button (Desktop only) */}
               <button
@@ -603,17 +554,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </div>
 
-      {/* PWA Install Guide Modal */}
-      <InstallAppModal
-        isOpen={isInstallModalOpen}
-        onClose={() => setIsInstallModalOpen(false)}
-        deferredPrompt={deferredPrompt}
-        onInstallAccepted={() => setIsInstallable(false)}
-        onOpenPreview={(platform) => {
-          setPreviewDevice(platform);
-          setIsMobilePreviewOpen(true);
-        }}
-      />
+
 
       {/* Desktop Mobile Smartphone Preview Modal */}
       <MobilePreviewModal

@@ -9,16 +9,21 @@ exports.getAllPickups = async (req, res) => {
             SELECT p.*, 
                    o.order_number, 
                    o.service_name,
+                   o.status as order_status,
                    o.total_amount,
                    o.payment_status,
                    o.payment_method,
                    u.name as customer_name, 
                    u.phone as customer_phone,
-                   COALESCE(p.notes, o.pickup_address_text, a.address) as address_line,
-                   COALESCE(p.pickup_latitude, o.pickup_latitude, a.latitude, 8.8105) as latitude, 
-                   COALESCE(p.pickup_longitude, o.pickup_longitude, a.longitude, 124.7925) as longitude,
+                   COALESCE(o.pickup_address_text, p.notes, a.address) as address,
+                   COALESCE(o.pickup_address_text, p.notes, a.address) as address_line,
+                   COALESCE(p.pickup_latitude, o.pickup_latitude, a.latitude) as latitude, 
+                   COALESCE(p.pickup_longitude, o.pickup_longitude, a.longitude) as longitude,
                    du.name as driver_name,
-                   du.phone as driver_phone
+                   du.phone as driver_phone,
+                   du.latitude as driver_lat,
+                   du.longitude as driver_lng,
+                   du.updated_at as driver_location_updated_at
             FROM pickup_requests p
             JOIN laundry_orders o ON p.order_id = o.id
             JOIN users u ON p.customer_id = u.id
@@ -37,7 +42,15 @@ exports.getAllPickups = async (req, res) => {
         query += ' ORDER BY p.created_at DESC';
 
         const [pickups] = await db.query(query, params);
-        res.json(pickups);
+        // Cast coordinates to numbers if present
+        const mapped = pickups.map(p => ({
+            ...p,
+            latitude: p.latitude !== null && p.latitude !== undefined ? parseFloat(p.latitude) : null,
+            longitude: p.longitude !== null && p.longitude !== undefined ? parseFloat(p.longitude) : null,
+            driver_lat: p.driver_lat !== null && p.driver_lat !== undefined ? parseFloat(p.driver_lat) : null,
+            driver_lng: p.driver_lng !== null && p.driver_lng !== undefined ? parseFloat(p.driver_lng) : null,
+        }));
+        res.json(mapped);
     } catch (error) {
         console.error('Error fetching pickups:', error);
         res.status(500).json({ message: 'Error fetching pickups', error: error.message });
@@ -136,13 +149,17 @@ exports.updatePickupStatus = async (req, res) => {
             [task.customer_id, task.order_id, notifTitle, notifMsg]
         );
 
+        const pickupDesc = status === 'picked_up' 
+            ? `Laundry picked up by a driver – Order #${task.order_number}` 
+            : `Pickup status for order ${task.order_number} updated to '${status}'`;
+
         await logActivity({
             req,
             actorId: userId,
             actorName: req.user.name,
             actorRole: req.user.role,
-            actionType: `pickup_${status}`,
-            description: `Pickup status for order ${task.order_number} updated to '${status}'`,
+            actionType: status === 'picked_up' ? 'driver_picked_up' : `pickup_${status}`,
+            description: pickupDesc,
             entityType: 'pickup',
             entityId: pickupId,
             outcome: status === 'failed' ? 'failure' : 'success',
@@ -174,16 +191,21 @@ exports.getAllDeliveries = async (req, res) => {
             SELECT d.*, 
                    o.order_number, 
                    o.service_name,
+                   o.status as order_status,
                    o.total_amount,
                    o.payment_status,
                    o.payment_method,
                    u.name as customer_name, 
                    u.phone as customer_phone,
-                   COALESCE(d.notes, o.delivery_address_text, a.address) as address_line,
-                   COALESCE(d.delivery_latitude, o.delivery_latitude, o.pickup_latitude, a.latitude, 8.8105) as latitude, 
-                   COALESCE(d.delivery_longitude, o.delivery_longitude, o.pickup_longitude, a.longitude, 124.7925) as longitude,
+                   COALESCE(o.delivery_address_text, d.notes, o.pickup_address_text, a.address) as address,
+                   COALESCE(o.delivery_address_text, d.notes, o.pickup_address_text, a.address) as address_line,
+                   COALESCE(d.delivery_latitude, o.delivery_latitude, o.pickup_latitude, a.latitude) as latitude, 
+                   COALESCE(d.delivery_longitude, o.delivery_longitude, o.pickup_longitude, a.longitude) as longitude,
                    du.name as driver_name,
-                   du.phone as driver_phone
+                   du.phone as driver_phone,
+                   du.latitude as driver_lat,
+                   du.longitude as driver_lng,
+                   du.updated_at as driver_location_updated_at
             FROM delivery_requests d
             JOIN laundry_orders o ON d.order_id = o.id
             JOIN users u ON d.customer_id = u.id
@@ -202,7 +224,15 @@ exports.getAllDeliveries = async (req, res) => {
         query += ' ORDER BY d.created_at DESC';
 
         const [deliveries] = await db.query(query, params);
-        res.json(deliveries);
+        // Cast coordinates to numbers if present
+        const mapped = deliveries.map(d => ({
+            ...d,
+            latitude: d.latitude !== null && d.latitude !== undefined ? parseFloat(d.latitude) : null,
+            longitude: d.longitude !== null && d.longitude !== undefined ? parseFloat(d.longitude) : null,
+            driver_lat: d.driver_lat !== null && d.driver_lat !== undefined ? parseFloat(d.driver_lat) : null,
+            driver_lng: d.driver_lng !== null && d.driver_lng !== undefined ? parseFloat(d.driver_lng) : null,
+        }));
+        res.json(mapped);
     } catch (error) {
         console.error('Error fetching deliveries:', error);
         res.status(500).json({ message: 'Error fetching deliveries', error: error.message });
@@ -301,13 +331,17 @@ exports.updateDeliveryStatus = async (req, res) => {
             [task.customer_id, task.order_id, notifTitle, notifMsg]
         );
 
+        const deliveryDesc = status === 'delivered' 
+            ? `Laundry delivered – Order #${task.order_number}` 
+            : `Delivery status for order ${task.order_number} updated to '${status}'`;
+
         await logActivity({
             req,
             actorId: userId,
             actorName: req.user.name,
             actorRole: req.user.role,
-            actionType: `delivery_${status}`,
-            description: `Delivery status for order ${task.order_number} updated to '${status}'`,
+            actionType: status === 'delivered' ? 'laundry_delivered' : `delivery_${status}`,
+            description: deliveryDesc,
             entityType: 'delivery',
             entityId: deliveryId,
             outcome: status === 'failed' ? 'failure' : 'success',

@@ -3,10 +3,12 @@ import api from '../../services/api';
 import { Badge } from '../../components/ui';
 import { 
   Users, Truck, Package, DollarSign, Clock, CheckCircle2, ListOrdered, FileText,
-  TrendingUp, Activity, Bell, ShoppingBag, Droplets, Key, Shield, XCircle
+  TrendingUp, Activity, Bell, ShoppingBag, Droplets, Key, Shield, XCircle, Plus, Calendar
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import ActivityLogModal from '../../components/common/ActivityLogModal';
+import AddCustomerLaundryModal from '../../components/common/AddCustomerLaundryModal';
+import TransactionFeedbackModal from '../../components/common/TransactionFeedbackModal';
 
 interface Order {
   id: number;
@@ -55,17 +57,53 @@ export default function WorkerDashboard() {
   const [loading, setLoading] = useState(true);
   const [showAllActivities, setShowAllActivities] = useState(false);
 
+  // Walk-in Laundry Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  // Transaction Feedback Modal State
+  const [feedbackModal, setFeedbackModal] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: ''
+  });
+
   const fetchData = async () => {
     try {
-      const [ordersRes, statsRes, activitiesRes] = await Promise.all([
+      const [ordersRes, statsRes, activitiesRes] = await Promise.allSettled([
         api.get('/orders'),
         api.get('/dashboard/stats'),
-        api.get('/activities/recent?limit=7').catch(() => api.get('/dashboard/activity').catch(() => ({ data: [] })))
+        api.get('/activities/recent?limit=15')
       ]);
-      setOrders(ordersRes.data || []);
-      setStats(statsRes.data || null);
-      const acts = Array.isArray(activitiesRes.data) ? activitiesRes.data : activitiesRes.data?.activities || [];
-      setActivities(acts);
+
+      if (ordersRes.status === 'fulfilled') {
+        setOrders(ordersRes.value.data || []);
+      }
+
+      if (statsRes.status === 'fulfilled') {
+        setStats(statsRes.value.data || null);
+      }
+
+      if (activitiesRes.status === 'fulfilled') {
+        const acts = Array.isArray(activitiesRes.value.data) 
+          ? activitiesRes.value.data 
+          : activitiesRes.value.data?.activities || [];
+        setActivities(acts);
+      } else {
+        // Fallback to /dashboard/activity if /activities/recent was rejected
+        try {
+          const fallbackRes = await api.get('/dashboard/activity?limit=15');
+          const fallbackActs = Array.isArray(fallbackRes.data) ? fallbackRes.data : [];
+          setActivities(fallbackActs);
+        } catch (e) {
+          console.warn('Fallback activity retrieval note:', e);
+        }
+      }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -75,7 +113,7 @@ export default function WorkerDashboard() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 25000);
+    const interval = setInterval(fetchData, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -83,8 +121,19 @@ export default function WorkerDashboard() {
     try {
       await api.put(`/orders/${orderId}/status`, { status: newStatus, notes: 'Updated by worker' });
       fetchData();
-    } catch (error) {
-      alert('Error updating status');
+      setFeedbackModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Status Updated',
+        message: `Order status successfully updated to ${newStatus}.`
+      });
+    } catch (error: any) {
+      setFeedbackModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Failed to Update Status',
+        message: error.response?.data?.message || 'Error updating status'
+      });
     }
   };
 
@@ -100,7 +149,7 @@ export default function WorkerDashboard() {
 
   if (loading) return (
     <div className="flex h-[50vh] items-center justify-center">
-      <div className="animate-pulse flex flex-col items-center gap-sm text-blue-600 dark:text-blue-400">
+      <div className="animate-pulse flex flex-col items-center gap-sm text-emerald-600 dark:text-emerald-400">
         <Clock className="w-8 h-8 animate-spin" />
         <p className="text-sm font-medium mt-2">Loading dashboard data...</p>
       </div>
@@ -110,6 +159,25 @@ export default function WorkerDashboard() {
   return (
     <div className="space-y-6">
       
+      {/* Top Action Bar with Add Customer Laundry button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white shadow-lg shadow-emerald-700/15">
+        <div>
+          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-200">Shop Operations</span>
+          <h1 className="text-xl sm:text-2xl font-black tracking-tight">Staff & Laundry Dashboard</h1>
+          <p className="text-xs text-emerald-100/90 mt-0.5">
+            Monitor shop activities, real-time orders, and walk-in laundry services
+          </p>
+        </div>
+
+        <button
+          onClick={() => setIsAddModalOpen(true)}
+          className="px-5 py-3 rounded-xl bg-white text-emerald-700 hover:bg-emerald-50 font-black text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] shrink-0"
+        >
+          <Plus className="w-4 h-4 stroke-[3]" />
+          <span>Add Customer Laundry</span>
+        </button>
+      </div>
+
       {/* Stats Grid */}
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -166,7 +234,7 @@ export default function WorkerDashboard() {
       {/* Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Recent Activity */}
+        {/* Recent Activity Section */}
         <div className="lg:col-span-2">
           <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-sm h-full flex flex-col justify-between">
             <div>
@@ -177,13 +245,25 @@ export default function WorkerDashboard() {
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                   </span>
+                  <span className="text-xs text-gray-400 font-normal ml-1">
+                    ({activities.length} latest)
+                  </span>
                 </div>
-                <button 
-                  onClick={() => setShowAllActivities(true)}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 font-medium transition-colors"
-                >
-                  View All Activity →
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => fetchData()}
+                    className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    title="Refresh activities"
+                  >
+                    Refresh
+                  </button>
+                  <button 
+                    onClick={() => setShowAllActivities(true)}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 font-medium transition-colors"
+                  >
+                    View All Activity →
+                  </button>
+                </div>
               </div>
               
               {activities.length === 0 ? (
@@ -193,30 +273,51 @@ export default function WorkerDashboard() {
                   <p className="text-xs text-gray-400 mt-0.5">System operations will automatically appear here.</p>
                 </div>
               ) : (
-                <div className="space-y-2.5">
-                  {activities.map((activity, i) => {
+                <div className="space-y-2.5 max-h-[540px] overflow-y-auto pr-1">
+                  {activities.slice(0, 15).map((activity, i) => {
                     const actionType = activity.action_type || '';
                     const isFailure = activity.outcome === 'failure';
+
+                    const exactDate = new Date(activity.created_at).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric'
+                    });
+                    const exactTime = new Date(activity.created_at).toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    });
+
+                    // Format actor and entity display
+                    const actorDisplay = activity.actor_name || 'System';
+                    const entityDisplay = activity.entity_id 
+                      ? (String(activity.entity_id).startsWith('LAU') ? activity.entity_id : `#${activity.entity_id}`)
+                      : (activity.metadata?.order_number || null);
+
                     return (
                       <div 
                         key={activity.id || i} 
                         onClick={() => setShowAllActivities(true)}
-                        className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/70 transition-colors cursor-pointer border border-gray-100 dark:border-gray-800"
+                        className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/70 transition-colors cursor-pointer border border-gray-100 dark:border-gray-800/90 gap-2"
                       >
-                        <div className="flex items-center space-x-3 min-w-0 flex-1">
-                          <div className={`p-2 rounded-lg shrink-0 ${
+                        <div className="flex items-start sm:items-center space-x-3 min-w-0 flex-1">
+                          <div className={`p-2 rounded-xl shrink-0 mt-0.5 sm:mt-0 ${
                             isFailure 
                               ? 'bg-red-50 dark:bg-red-900/20 text-red-600'
                               : actionType.startsWith('auth_')
                               ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600'
-                              : actionType.startsWith('pickup_') || actionType.startsWith('delivery_')
+                              : actionType.startsWith('pickup_') || actionType.startsWith('delivery_') || actionType.includes('driver')
                               ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600'
                               : actionType.startsWith('payment_')
+                              ? 'bg-teal-50 dark:bg-teal-900/20 text-teal-600'
+                              : actionType.includes('walk_in')
                               ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600'
-                              : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
+                              : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600'
                           }`}>
                             {actionType.startsWith('auth_') ? <Key className="h-4 w-4" /> :
-                             actionType.startsWith('pickup_') || actionType.startsWith('delivery_') ? <Truck className="h-4 w-4" /> :
+                             actionType.includes('walk_in') ? <ShoppingBag className="h-4 w-4" /> :
+                             actionType.startsWith('pickup_') || actionType.startsWith('delivery_') || actionType.includes('driver') ? <Truck className="h-4 w-4" /> :
                              actionType.startsWith('payment_') ? <DollarSign className="h-4 w-4" /> :
                              actionType.startsWith('user_') ? <Shield className="h-4 w-4" /> :
                              isFailure ? <XCircle className="h-4 w-4" /> :
@@ -226,32 +327,40 @@ export default function WorkerDashboard() {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-xs font-bold text-gray-900 dark:text-gray-100">
-                                {activity.actor_name || 'System User'}
+                                {actorDisplay}
                               </span>
                               {activity.actor_role && (
-                                <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded-full ${
+                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                                   activity.actor_role === 'admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' :
-                                  activity.actor_role === 'worker' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' :
+                                  activity.actor_role === 'worker' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' :
                                   activity.actor_role === 'driver' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
-                                  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                  'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
                                 }`}>
                                   {activity.actor_role}
                                 </span>
                               )}
-                              {activity.entity_id && (
-                                <span className="text-[10px] text-gray-500 font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">
-                                  #{activity.entity_id}
+                              {entityDisplay && (
+                                <span className="text-[10px] text-gray-500 font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">
+                                  {entityDisplay}
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-gray-600 dark:text-gray-300 truncate mt-0.5">
+                            <p className="text-xs text-gray-700 dark:text-gray-300 font-medium mt-1 leading-snug">
                               {activity.description || `${activity.action_type}`}
                             </p>
                           </div>
                         </div>
 
-                        <div className="text-[11px] text-gray-400 dark:text-gray-500 whitespace-nowrap pl-2">
-                          {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
+                        {/* Exact Date & Time */}
+                        <div className="flex sm:flex-col items-center sm:items-end justify-between text-[11px] text-gray-400 dark:text-gray-500 shrink-0 border-t sm:border-t-0 pt-1.5 sm:pt-0 border-gray-100 dark:border-gray-800">
+                          <span className="font-semibold text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-gray-400 inline" />
+                            {exactDate}
+                          </span>
+                          <span className="flex items-center gap-1 text-gray-400">
+                            <Clock className="w-3 h-3 text-gray-400 inline" />
+                            {exactTime}
+                          </span>
                         </div>
                       </div>
                     );
@@ -261,12 +370,15 @@ export default function WorkerDashboard() {
             </div>
 
             <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
-              <span>Auto-refreshing every 25s</span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                Auto-refreshing every 15s • Exact audit timestamps
+              </span>
               <button 
                 onClick={() => setShowAllActivities(true)}
-                className="hover:text-blue-600 dark:hover:text-blue-400 underline font-medium"
+                className="hover:text-emerald-600 dark:hover:text-emerald-400 underline font-medium"
               >
-                Open Audit Viewer
+                Open Audit History
               </button>
             </div>
           </div>
@@ -413,6 +525,38 @@ export default function WorkerDashboard() {
       <ActivityLogModal 
         isOpen={showAllActivities} 
         onClose={() => setShowAllActivities(false)} 
+      />
+
+      {/* Walk-in / Drop-off Laundry Modal */}
+      <AddCustomerLaundryModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onSuccess={(result) => {
+          fetchData();
+          setFeedbackModal({
+            isOpen: true,
+            type: 'success',
+            title: 'Laundry Transaction Added',
+            message: `Walk-in laundry transaction ${result.order_number} successfully registered for ${result.customer_name}. Total: ₱${Number(result.total_amount).toFixed(2)} (${result.payment_status === 'paid' ? 'Paid' : 'Unpaid'}).`
+          });
+        }}
+        onError={(errMsg) => {
+          setFeedbackModal({
+            isOpen: true,
+            type: 'error',
+            title: 'Transaction Error',
+            message: errMsg || 'Failed to register laundry transaction.'
+          });
+        }}
+      />
+
+      {/* Transaction Success / Error Feedback Modal */}
+      <TransactionFeedbackModal
+        isOpen={feedbackModal.isOpen}
+        type={feedbackModal.type}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+        onClose={() => setFeedbackModal(prev => ({ ...prev, isOpen: false }))}
       />
     </div>
   );

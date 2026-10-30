@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import { 
   Truck, Navigation, CheckCircle, MapPin, ExternalLink, 
   Maximize2, Minimize2, Crosshair, ChevronUp, ChevronDown, 
@@ -20,6 +21,7 @@ interface Task {
 }
 
 export default function DriverMap() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -145,6 +147,35 @@ export default function DriverMap() {
     }
   };
 
+  const syncLocationWithBackend = useCallback(async (lat: number, lng: number) => {
+    if (user?.id) {
+      try {
+        await api.patch(`/drivers/${user.id}/location`, { latitude: lat, longitude: lng });
+      } catch (err) {
+        // Non-fatal, silent sync error
+      }
+    }
+  }, [user]);
+
+  // Request & sync driver GPS on mount with continuous geolocation watch
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setDriverLocation(coords);
+        syncLocationWithBackend(coords.lat, coords.lng);
+      },
+      () => {
+        // Silent watch error (e.g. prompt dismissed)
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+    );
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [syncLocationWithBackend]);
+
   const handleGetDirections = (task: Task) => {
     if (!navigator.geolocation) {
       setLocationError('Geolocation is not supported by your browser.');
@@ -163,6 +194,7 @@ export default function DriverMap() {
       (position) => {
         const { latitude, longitude } = position.coords;
         setDriverLocation({ lat: latitude, lng: longitude });
+        syncLocationWithBackend(latitude, longitude);
         calculateRoute(task, latitude, longitude);
       },
       (error) => {
@@ -183,6 +215,7 @@ export default function DriverMap() {
       (pos) => {
         const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setDriverLocation(coords);
+        syncLocationWithBackend(coords.lat, coords.lng);
         if (selectedTask) {
           calculateRoute(selectedTask, coords.lat, coords.lng);
         }

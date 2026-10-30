@@ -16,6 +16,7 @@ import {
   Info,
   Scale
 } from 'lucide-react';
+import StatusBadge from '../../components/common/StatusBadge';
 
 interface Order {
   id: number;
@@ -283,20 +284,10 @@ export default function CustomerPayments() {
                       </span>
                       
                       {/* Order Status Badge */}
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800">
-                        {order.status}
-                      </span>
+                      <StatusBadge status={order.status} type="order" />
 
                       {/* Payment Status Badge */}
-                      {paid ? (
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-                          <CheckCircle className="h-3 w-3" /> Paid
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1">
-                          <Clock className="h-3 w-3" /> Unpaid
-                        </span>
-                      )}
+                      <StatusBadge status={order.payment_status} type="payment" />
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
@@ -402,9 +393,7 @@ export default function CustomerPayments() {
                         <td className="py-3.5 px-4 uppercase font-semibold text-blue-600 dark:text-blue-400">{p.payment_method}</td>
                         <td className="py-3.5 px-4 font-bold text-sm text-gray-900 dark:text-gray-100">₱{parseFloat(p.amount as string).toFixed(2)}</td>
                         <td className="py-3.5 px-4">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
-                            <CheckCircle className="h-2.5 w-2.5" /> {p.payment_status}
-                          </span>
+                          <StatusBadge status={p.payment_status} type="payment" />
                         </td>
                         <td className="py-3.5 px-4 text-gray-500">{p.collector_name || 'System (GCash)'}</td>
                         <td className="py-3.5 px-4 text-gray-500">{new Date(p.created_at).toLocaleString()}</td>

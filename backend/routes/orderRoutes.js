@@ -6,8 +6,11 @@ const { authenticateToken, authorizeRole, authorizeApprovedDriver } = require('.
 router.use(authenticateToken);
 router.use(authorizeApprovedDriver);
 
-// Create order (Customer)
+// Create order (Customer online request)
 router.post('/', authorizeRole('customer'), orderController.createOrder);
+
+// Walk-in / Drop-off Laundry (Worker & Admin)
+router.post('/walk-in', authorizeRole('worker', 'admin'), orderController.createWalkInOrder);
 
 // Workflow counts and available drivers for assignment
 router.get('/workflow/counts', authorizeRole('worker', 'admin'), orderController.getWorkflowCounts);
@@ -17,7 +20,16 @@ router.get('/drivers/available', authorizeRole('worker', 'admin'), orderControll
 router.get('/', orderController.getOrders);
 router.get('/:id', orderController.getOrderById);
 
-// WORKER WORKFLOW ENDPOINTS
+// SIMPLIFIED WORKFLOW & WORKER ENDPOINTS
+router.put('/:id/start-processing', authorizeRole('worker', 'admin'), orderController.startLaundryProcessing);
+router.put('/:id/mark-ready', authorizeRole('worker', 'admin'), orderController.markLaundryReady);
+router.put('/:id/complete', authorizeRole('worker', 'admin'), orderController.completeOrder);
+router.put('/:id/payment-status', authorizeRole('worker', 'admin'), orderController.updateOrderPaymentStatus);
+
+// CUSTOMER FULFILLMENT CHOICE (Delivery vs Self-Pickup)
+router.post('/:id/select-fulfillment', authorizeRole('customer', 'worker', 'admin'), orderController.selectFulfillmentChoice);
+
+// WORKER APPROVAL & DRIVER ASSIGNMENT
 router.put('/:id/approve', authorizeRole('worker', 'admin'), orderController.approveOrder);
 router.put('/:id/reject', authorizeRole('worker', 'admin'), orderController.rejectOrder);
 router.put('/:id/assign-driver', authorizeRole('worker', 'admin'), orderController.assignDriver);
