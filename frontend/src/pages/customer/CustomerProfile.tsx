@@ -6,6 +6,7 @@ import {
   CheckCircle2, X, AlertCircle, Navigation, Star, Edit3 
 } from 'lucide-react';
 import MapComponent from '../../components/map/MapComponent';
+import NotificationSettingsCard from '../../components/notifications/NotificationSettingsCard';
 
 interface Address {
   id: number;
@@ -415,6 +416,9 @@ export default function CustomerProfile() {
           </div>
         </div>
       </div>
+
+      {/* Real-time Notification Preferences */}
+      <NotificationSettingsCard />
 
       {/* PIN LOCATION ON MAP MODAL */}
       {isPinModalOpen && (

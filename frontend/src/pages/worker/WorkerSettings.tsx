@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { Settings, Search, Edit, Trash2, Plus, X, AlertCircle } from 'lucide-react';
+import NotificationSettingsCard from '../../components/notifications/NotificationSettingsCard';
 
 interface Service {
   id: number;
@@ -183,6 +184,9 @@ export default function WorkerSettings() {
           </table>
         </div>
       </div>
+
+      {/* Notification Preferences */}
+      <NotificationSettingsCard />
 
       {/* Add/Edit Modal */}
       {isModalOpen && (

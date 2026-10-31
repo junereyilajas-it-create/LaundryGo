@@ -2,6 +2,7 @@ const db = require('../config/db');
 const bcrypt = require('bcrypt');
 const smsService = require('../utils/smsService');
 const { logActivity } = require('../utils/activityLogger');
+const { createNotification } = require('../services/notificationService');
 
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
@@ -181,16 +182,17 @@ exports.approveDriver = async (req, res) => {
                     rejection_reason = NULL
             `, [driverId, req.user.id]);
 
-            // In-app notification for the driver
-            await connection.query(
-                'INSERT INTO notifications (user_id, title, message) VALUES (?, "Driver Application Approved", ?)',
-                [
-                    driverId,
-                    'Congratulations! Your LaundriGo driver application has been approved. You now have full access to delivery assignments and the driver dashboard.'
-                ]
-            );
-
             await connection.commit();
+
+            // In-app notification for the driver
+            await createNotification({
+                userId: driverId,
+                title: 'Driver Application Approved',
+                message: 'Congratulations! Your LaundriGo driver application has been approved. You now have full access to delivery assignments and the driver dashboard.',
+                type: 'account',
+                relatedUserId: req.user.id,
+                targetUrl: '/driver'
+            });
         } catch (dbErr) {
             await connection.rollback();
             throw dbErr;
@@ -308,15 +310,16 @@ exports.reapproveDriver = async (req, res) => {
                     rejection_reason = NULL
             `, [driverId, req.user.id]);
 
-            await connection.query(
-                'INSERT INTO notifications (user_id, title, message) VALUES (?, "Driver Application Re-Approved", ?)',
-                [
-                    driverId,
-                    'Congratulations! Your LaundriGo driver application has been re-approved by the Administrator. You now have full access to delivery assignments and the driver dashboard.'
-                ]
-            );
-
             await connection.commit();
+
+            await createNotification({
+                userId: driverId,
+                title: 'Driver Application Re-Approved',
+                message: 'Congratulations! Your LaundriGo driver application has been re-approved by the Administrator. You now have full access to delivery assignments and the driver dashboard.',
+                type: 'account',
+                relatedUserId: req.user.id,
+                targetUrl: '/driver'
+            });
         } catch (dbErr) {
             await connection.rollback();
             throw dbErr;
@@ -426,16 +429,17 @@ exports.rejectDriver = async (req, res) => {
                     rejection_reason = VALUES(rejection_reason)
             `, [driverId, req.user.id, rejectionReason]);
 
-            // In-app notification for the driver
-            await connection.query(
-                'INSERT INTO notifications (user_id, title, message) VALUES (?, "Driver Application Update", ?)',
-                [
-                    driverId,
-                    `Your LaundriGo driver application has not been approved. Reason: ${rejectionReason}`
-                ]
-            );
-
             await connection.commit();
+
+            // In-app notification for the driver
+            await createNotification({
+                userId: driverId,
+                title: 'Driver Application Update',
+                message: `Your LaundriGo driver application has not been approved. Reason: ${rejectionReason}`,
+                type: 'account',
+                relatedUserId: req.user.id,
+                targetUrl: '/driver/profile'
+            });
         } catch (dbErr) {
             await connection.rollback();
             throw dbErr;

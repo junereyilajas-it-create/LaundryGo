@@ -920,7 +920,7 @@ export default function WorkerOrders() {
 
           <Button
             onClick={() => setIsAddLaundryModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-2 px-4 py-2 rounded-xl shadow-md shadow-emerald-600/20 text-xs sm:text-sm"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-2 px-4 py-2 rounded-xl shadow-md shadow-blue-600/20 text-xs sm:text-sm"
           >
             <Plus className="w-4 h-4" />
             Add Customer Laundry
@@ -1216,15 +1216,60 @@ export default function WorkerOrders() {
                 </div>
               )}
 
-              {/* Processing Stage Banner */}
+              {/* Processing Stage Banner & 4-Stage Stepper */}
               {selectedOrder.status === 'Processing' && (
-                <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 space-y-1.5 shadow-xs">
-                  <div className="flex items-center gap-2 font-bold text-sm">
-                    <Clock className="w-4 h-4 text-blue-600 animate-spin" />
-                    Laundry In Process (Estimated 2 Hours)
+                <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 space-y-3 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 font-bold text-sm">
+                      <Clock className="w-4 h-4 text-blue-600 animate-spin" />
+                      Laundry In Process • Stage: <span className="text-blue-600 dark:text-blue-400 font-extrabold">{selectedOrder.processing_stage || 'Washing'}</span>
+                    </div>
+                    <span className="text-[11px] text-blue-600 dark:text-blue-300 font-semibold bg-blue-100/70 dark:bg-blue-900/50 px-2.5 py-0.5 rounded-full">
+                      Step {Math.max(1, ['Washing', 'Drying', 'Folding', 'Quality Check'].indexOf(selectedOrder.processing_stage || 'Washing') + 1)} of 4
+                    </span>
                   </div>
-                  <p className="text-xs text-blue-700 dark:text-blue-300">
-                    Washing, drying, folding, and quality check are actively underway under one simplified status. Once finished, click <strong>Mark as Ready</strong> to notify the customer.
+                  
+                  {/* 4 Processing Stages Stepper */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                    {[
+                      { stage: 'Washing', num: 1 },
+                      { stage: 'Drying', num: 2 },
+                      { stage: 'Folding', num: 3 },
+                      { stage: 'Quality Check', num: 4 }
+                    ].map(({ stage, num }) => {
+                      const stages = ['Washing', 'Drying', 'Folding', 'Quality Check'];
+                      const currentIdx = stages.indexOf(selectedOrder.processing_stage || 'Washing');
+                      const stageIdx = stages.indexOf(stage);
+                      const isCurrent = (selectedOrder.processing_stage || 'Washing') === stage;
+                      const isPast = stageIdx < currentIdx;
+
+                      return (
+                        <button
+                          key={stage}
+                          type="button"
+                          disabled={actionInProgress || isCurrent}
+                          onClick={() => handleAdvanceProcessingStage(stage)}
+                          className={`p-2.5 rounded-xl border text-left transition-all ${
+                            isCurrent
+                              ? 'border-blue-600 bg-white dark:bg-gray-900 text-blue-700 dark:text-blue-300 font-bold shadow-xs ring-2 ring-blue-500/30'
+                              : isPast
+                              ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 font-semibold hover:border-blue-400'
+                              : 'border-blue-200/60 dark:border-blue-900/40 bg-white/60 dark:bg-gray-800/60 text-gray-600 dark:text-gray-400 hover:border-blue-400'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-[10px] text-gray-400 font-bold mb-0.5">
+                            <span>Stage {num}</span>
+                            {isPast && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                            {isCurrent && <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />}
+                          </div>
+                          <span className="text-xs font-bold block">{stage}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <p className="text-[11px] text-blue-700 dark:text-blue-300">
+                    Click any stage above to advance laundry progress, or click Next Stage / Mark as Ready below.
                   </p>
                 </div>
               )}
@@ -1628,17 +1673,52 @@ export default function WorkerOrders() {
                   </Button>
                 )}
 
-                {/* 5. STAGE: Processing -> Simplified One-Status Mark as Ready */}
+                {/* 5. STAGE: Processing -> Advance Stage or Mark as Ready */}
                 {selectedOrder.status === 'Processing' && (
-                  <Button
-                    size="sm"
-                    onClick={() => handleMarkReady(selectedOrder.id)}
-                    disabled={actionInProgress}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-sm"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    Mark as Ready
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(!selectedOrder.processing_stage || selectedOrder.processing_stage === 'Washing') && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleAdvanceProcessingStage('Drying')}
+                        disabled={actionInProgress}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5 shadow-sm"
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                        Advance to Drying
+                      </Button>
+                    )}
+                    {selectedOrder.processing_stage === 'Drying' && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleAdvanceProcessingStage('Folding')}
+                        disabled={actionInProgress}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5 shadow-sm"
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                        Advance to Folding
+                      </Button>
+                    )}
+                    {selectedOrder.processing_stage === 'Folding' && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleAdvanceProcessingStage('Quality Check')}
+                        disabled={actionInProgress}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5 shadow-sm"
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                        Advance to Quality Check
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      onClick={() => handleMarkReady(selectedOrder.id)}
+                      disabled={actionInProgress}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-sm"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Mark as Ready
+                    </Button>
+                  </div>
                 )}
 
                 {/* 6. STAGE: Ready for Pickup/Delivery -> Assign Delivery Driver or Mark Completed */}

@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const db = require('../config/db');
 const { logActivity } = require('../utils/activityLogger');
+const { notifyAdmins } = require('../services/notificationService');
 
 // Regular expression for valid email RFC format
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -127,18 +128,14 @@ exports.register = async (req, res) => {
                 [newUserId]
             );
 
-            // Notify Admin inside the LaundriGo system
-            try {
-                const [admins] = await db.query('SELECT id FROM users WHERE role = "admin" LIMIT 1');
-                if (admins.length > 0) {
-                    await db.query(
-                        'INSERT INTO notifications (user_id, title, message) VALUES (?, "New Driver Application", ?)',
-                        [admins[0].id, `A new driver application has been submitted by ${normalizedName} (${normalizedEmail}).`]
-                    );
-                }
-            } catch (notifErr) {
-                console.warn('Admin notification warning:', notifErr.message);
-            }
+            // Notify Admin in real-time about new driver registration
+            await notifyAdmins({
+                title: 'New Driver Registration',
+                message: `A new driver application has been submitted by ${normalizedName} (${normalizedEmail}) requiring approval.`,
+                type: 'account',
+                relatedUserId: newUserId,
+                targetUrl: '/worker/users?tab=applications'
+            });
 
             await logActivity({
                 actorId: newUserId,

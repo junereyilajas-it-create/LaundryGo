@@ -177,6 +177,7 @@ export function getOrderStatusConfig(status: string | null | undefined): StatusS
     case 'Washing':
     case 'Drying':
     case 'Folding':
+    case 'Quality Check':
       return {
         label: norm === 'Processing' ? 'Processing' : `Processing (${norm})`,
         badgeClass: 'bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800',

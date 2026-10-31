@@ -149,7 +149,7 @@ export default function WorkerDashboard() {
 
   if (loading) return (
     <div className="flex h-[50vh] items-center justify-center">
-      <div className="animate-pulse flex flex-col items-center gap-sm text-emerald-600 dark:text-emerald-400">
+      <div className="animate-pulse flex flex-col items-center gap-sm text-blue-600 dark:text-blue-400">
         <Clock className="w-8 h-8 animate-spin" />
         <p className="text-sm font-medium mt-2">Loading dashboard data...</p>
       </div>
@@ -160,18 +160,18 @@ export default function WorkerDashboard() {
     <div className="space-y-6">
       
       {/* Top Action Bar with Add Customer Laundry button */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white shadow-lg shadow-emerald-700/15">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 text-white shadow-lg shadow-blue-700/15">
         <div>
-          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-200">Shop Operations</span>
+          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-200">Shop Operations</span>
           <h1 className="text-xl sm:text-2xl font-black tracking-tight">Staff & Laundry Dashboard</h1>
-          <p className="text-xs text-emerald-100/90 mt-0.5">
+          <p className="text-xs text-blue-100/90 mt-0.5">
             Monitor shop activities, real-time orders, and walk-in laundry services
           </p>
         </div>
 
         <button
           onClick={() => setIsAddModalOpen(true)}
-          className="px-5 py-3 rounded-xl bg-white text-emerald-700 hover:bg-emerald-50 font-black text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] shrink-0"
+          className="px-5 py-3 rounded-xl bg-white text-blue-700 hover:bg-blue-50 font-black text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] shrink-0"
         >
           <Plus className="w-4 h-4 stroke-[3]" />
           <span>Add Customer Laundry</span>
@@ -186,19 +186,19 @@ export default function WorkerDashboard() {
               <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                 <DollarSign className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
-              <TrendingUp className="h-4 w-4 text-green-500" />
+              <TrendingUp className="h-4 w-4 text-blue-500" />
             </div>
             <h3 className="font-medium text-gray-600 dark:text-gray-400 mb-1">Today's Revenue</h3>
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">₱{Number(stats.revenue || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}</p>
-            <p className="text-sm text-green-600 dark:text-green-400 mt-1">From completed orders</p>
+            <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">From completed orders</p>
           </div>
           
           <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-4">
-              <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                <Users className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
-              <TrendingUp className="h-4 w-4 text-green-500" />
+              <TrendingUp className="h-4 w-4 text-blue-500" />
             </div>
             <h3 className="font-medium text-gray-600 dark:text-gray-400 mb-1">Total Customers</h3>
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.totalCustomers}</p>
@@ -207,26 +207,26 @@ export default function WorkerDashboard() {
           
           <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-4">
-              <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                <Package className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                <Package className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
               </div>
-              <TrendingUp className="h-4 w-4 text-green-500" />
+              <TrendingUp className="h-4 w-4 text-blue-500" />
             </div>
             <h3 className="font-medium text-gray-600 dark:text-gray-400 mb-1">Total Orders</h3>
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.totalOrders}</p>
-            <p className="text-sm text-green-600 dark:text-green-400 mt-1">{stats.completedOrders} completed</p>
+            <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">{stats.completedOrders} completed</p>
           </div>
 
           <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-4">
-              <div className="p-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
-                <ListOrdered className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+              <div className="p-2 bg-sky-50 dark:bg-sky-900/20 rounded-lg">
+                <ListOrdered className="h-5 w-5 text-sky-600 dark:text-sky-400" />
               </div>
               <Activity className="h-4 w-4 text-blue-500" />
             </div>
             <h3 className="font-medium text-gray-600 dark:text-gray-400 mb-1">Active Laundry</h3>
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.processingOrders}</p>
-            <p className="text-sm text-orange-600 dark:text-orange-400 mt-1">{stats.pendingOrders} pending pickups</p>
+            <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">{stats.pendingOrders} pending pickups</p>
           </div>
         </div>
       )}
@@ -242,8 +242,8 @@ export default function WorkerDashboard() {
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Activity</h3>
                   <span className="flex h-2 w-2 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
                   </span>
                   <span className="text-xs text-gray-400 font-normal ml-1">
                     ({activities.length} latest)
@@ -259,7 +259,7 @@ export default function WorkerDashboard() {
                   </button>
                   <button 
                     onClick={() => setShowAllActivities(true)}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 font-medium transition-colors"
+                    className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 font-medium transition-colors"
                   >
                     View All Activity →
                   </button>
@@ -299,7 +299,7 @@ export default function WorkerDashboard() {
                       <div 
                         key={activity.id || i} 
                         onClick={() => setShowAllActivities(true)}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/70 transition-colors cursor-pointer border border-gray-100 dark:border-gray-800/90 gap-2"
+                        className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl hover:bg-blue-50/40 dark:hover:bg-blue-950/20 transition-colors cursor-pointer border border-gray-100 dark:border-gray-800/90 gap-2"
                       >
                         <div className="flex items-start sm:items-center space-x-3 min-w-0 flex-1">
                           <div className={`p-2 rounded-xl shrink-0 mt-0.5 sm:mt-0 ${
@@ -308,12 +308,12 @@ export default function WorkerDashboard() {
                               : actionType.startsWith('auth_')
                               ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600'
                               : actionType.startsWith('pickup_') || actionType.startsWith('delivery_') || actionType.includes('driver')
-                              ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600'
+                              ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
                               : actionType.startsWith('payment_')
-                              ? 'bg-teal-50 dark:bg-teal-900/20 text-teal-600'
+                              ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
                               : actionType.includes('walk_in')
-                              ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600'
-                              : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600'
+                              ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                              : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
                           }`}>
                             {actionType.startsWith('auth_') ? <Key className="h-4 w-4" /> :
                              actionType.includes('walk_in') ? <ShoppingBag className="h-4 w-4" /> :
@@ -332,7 +332,7 @@ export default function WorkerDashboard() {
                               {activity.actor_role && (
                                 <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                                   activity.actor_role === 'admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' :
-                                  activity.actor_role === 'worker' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' :
+                                  activity.actor_role === 'worker' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' :
                                   activity.actor_role === 'driver' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
                                   'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
                                 }`}>
@@ -371,12 +371,12 @@ export default function WorkerDashboard() {
 
             <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
               <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                 Auto-refreshing every 15s • Exact audit timestamps
               </span>
               <button 
                 onClick={() => setShowAllActivities(true)}
-                className="hover:text-emerald-600 dark:hover:text-emerald-400 underline font-medium"
+                className="hover:text-blue-600 dark:hover:text-blue-400 underline font-medium"
               >
                 Open Audit History
               </button>
@@ -396,7 +396,7 @@ export default function WorkerDashboard() {
                 </span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-4">
-                <div className="bg-green-500 h-2 rounded-full" style={{ width: `${stats?.totalOrders ? Math.round((stats.completedOrders / stats.totalOrders) * 100) : 0}%` }}></div>
+                <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${stats?.totalOrders ? Math.round((stats.completedOrders / stats.totalOrders) * 100) : 0}%` }}></div>
               </div>
               
               <div className="flex justify-between items-center mb-1">
@@ -406,7 +406,7 @@ export default function WorkerDashboard() {
                 </span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-4">
-                <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${stats?.totalOrders ? Math.round(((stats.processingOrders + stats.readyForDelivery) / stats.totalOrders) * 100) : 0}%` }}></div>
+                <div className="bg-indigo-500 h-2 rounded-full transition-all" style={{ width: `${stats?.totalOrders ? Math.round(((stats.processingOrders + stats.readyForDelivery) / stats.totalOrders) * 100) : 0}%` }}></div>
               </div>
               
               <div className="flex justify-between items-center mb-1">
@@ -416,7 +416,7 @@ export default function WorkerDashboard() {
                 </span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div className="bg-orange-500 h-2 rounded-full" style={{ width: `${stats?.totalOrders ? Math.round((stats.pendingOrders / stats.totalOrders) * 100) : 0}%` }}></div>
+                <div className="bg-sky-400 h-2 rounded-full transition-all" style={{ width: `${stats?.totalOrders ? Math.round((stats.pendingOrders / stats.totalOrders) * 100) : 0}%` }}></div>
               </div>
             </div>
           </div>
@@ -438,8 +438,8 @@ export default function WorkerDashboard() {
               
               <div className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800">
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-purple-50 dark:bg-purple-900/20 rounded-md">
-                    <ShoppingBag className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <div className="p-1.5 bg-indigo-50 dark:bg-indigo-900/20 rounded-md">
+                    <ShoppingBag className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Dry Cleaning</span>
                 </div>
@@ -450,8 +450,8 @@ export default function WorkerDashboard() {
 
               <div className="flex items-center justify-between py-2">
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-orange-50 dark:bg-orange-900/20 rounded-md">
-                    <CheckCircle2 className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                  <div className="p-1.5 bg-sky-50 dark:bg-sky-900/20 rounded-md">
+                    <CheckCircle2 className="w-4 h-4 text-sky-600 dark:text-sky-400" />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Ironing Only</span>
                 </div>

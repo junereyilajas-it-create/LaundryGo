@@ -1,7 +1,8 @@
 
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Droplets, LogOut, Bell } from 'lucide-react';
+import { Droplets, LogOut } from 'lucide-react';
+import NotificationBell from '../notifications/NotificationBell';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -23,11 +24,7 @@ export default function Navbar() {
             </Link>
           </div>
           <div className="flex items-center space-x-4">
-            <button className="p-2 text-gray-400 hover:text-gray-500 relative">
-              <Bell className="h-6 w-6" />
-              {/* Notification badge placeholder */}
-              <span className="absolute top-1 right-1 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-            </button>
+            <NotificationBell />
             <div className="flex items-center space-x-3">
               <div className="text-right hidden sm:block">
                 <div className="text-sm font-medium text-gray-900">{user?.name}</div>

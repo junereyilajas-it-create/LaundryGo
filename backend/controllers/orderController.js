@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const { calculateLaundryPricing } = require('../utils/pricingCalculator');
 const { logActivity } = require('../utils/activityLogger');
+const { createNotification, notifyWorkersAndAdmin } = require('../services/notificationService');
 
 // 1. Create a new laundry order (Customer) - supports COD and standard request
 const createOrder = async (req, res) => {
@@ -172,29 +173,24 @@ const createOrder = async (req, res) => {
         });
 
         // Add initial notification for customer
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-            [
-                customer_id, 
-                orderId, 
-                'Laundry Request Submitted', 
-                `Your laundry order ${order_number} has been submitted successfully and is Pending Approval.`
-            ]
-        );
+        await createNotification({
+            userId: customer_id,
+            orderId,
+            title: 'Laundry Request Submitted',
+            message: `Your laundry order ${order_number} has been submitted successfully and is Pending Approval.`,
+            type: 'order',
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         // Notify all workers/admins about the new order
-        const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
-        for (const worker of staff) {
-            await db.query(
-                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-                [
-                    worker.id,
-                    orderId,
-                    'New Order Received',
-                    `New order ${order_number} (${pMethod}, ${loadCount} load(s), ₱${calcAmount.toFixed(2)}) submitted by customer. Awaiting approval.`
-                ]
-            );
-        }
+        await notifyWorkersAndAdmin({
+            orderId,
+            title: 'New Order Received',
+            message: `New order ${order_number} (${pMethod}, ${loadCount} load(s), ₱${calcAmount.toFixed(2)}) submitted by customer. Awaiting approval.`,
+            type: 'order',
+            relatedUserId: customer_id,
+            targetUrl: `/worker/orders?orderId=${orderId}`
+        });
 
         res.status(201).json({ 
             message: 'Order created successfully', 
@@ -374,14 +370,15 @@ const approveOrder = async (req, res) => {
         );
 
         // Notify customer
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Order Approved", ?)',
-            [
-                order.customer_id,
-                orderId,
-                `Your laundry request ${order.order_number} has been approved and is being arranged for pickup.`
-            ]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId,
+            title: 'Order Approved',
+            message: `Your laundry request ${order.order_number} has been approved and is being arranged for pickup.`,
+            type: 'order',
+            relatedUserId: workerId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         await logActivity({
             req,
@@ -431,14 +428,15 @@ const rejectOrder = async (req, res) => {
         );
 
         // Notify customer
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Order Request Declined", ?)',
-            [
-                order.customer_id,
-                orderId,
-                `Your laundry request ${order.order_number} could not be accepted: ${rejection_reason}`
-            ]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId,
+            title: 'Order Request Declined',
+            message: `Your laundry request ${order.order_number} could not be accepted: ${rejection_reason}`,
+            type: 'order',
+            relatedUserId: workerId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         await logActivity({
             req,
@@ -511,16 +509,26 @@ const assignDriver = async (req, res) => {
             );
 
             // Notify driver
-            await db.query(
-                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Delivery Task Assigned", ?)',
-                [driver_id, orderId, `You have been assigned delivery task for order ${order.order_number}. Destination: ${order.delivery_address_text || 'Poblacion, Lagonglong'}.`]
-            );
+            await createNotification({
+                userId: driver_id,
+                orderId,
+                title: 'Delivery Task Assigned',
+                message: `You have been assigned delivery task for order ${order.order_number}. Destination: ${order.delivery_address_text || 'Poblacion, Lagonglong'}.`,
+                type: 'delivery',
+                relatedUserId: workerId,
+                targetUrl: `/driver?orderId=${orderId}`
+            });
 
             // Notify customer
-            await db.query(
-                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Delivery Driver Assigned", ?)',
-                [order.customer_id, orderId, `Driver ${driver.name} has been assigned to deliver your clean laundry.`]
-            );
+            await createNotification({
+                userId: order.customer_id,
+                orderId,
+                title: 'Delivery Driver Assigned',
+                message: `Driver ${driver.name} has been assigned to deliver your clean laundry.`,
+                type: 'delivery',
+                relatedUserId: driver_id,
+                targetUrl: `/customer/orders?orderId=${orderId}`
+            });
 
             await logActivity({
                 req,
@@ -556,20 +564,26 @@ const assignDriver = async (req, res) => {
             );
 
             // Notify driver
-            await db.query(
-                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "New Pickup Task Assigned", ?)',
-                [driver_id, orderId, `You have been assigned pickup task for order ${order.order_number}. Address: ${order.pickup_address_text || 'Poblacion, Lagonglong'}.`]
-            );
+            await createNotification({
+                userId: driver_id,
+                orderId,
+                title: 'New Pickup Task Assigned',
+                message: `You have been assigned pickup task for order ${order.order_number}. Address: ${order.pickup_address_text || 'Poblacion, Lagonglong'}.`,
+                type: 'delivery',
+                relatedUserId: workerId,
+                targetUrl: `/driver?orderId=${orderId}`
+            });
 
             // Notify customer
-            await db.query(
-                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Pickup Driver Assigned", ?)',
-                [
-                    order.customer_id, 
-                    orderId, 
-                    `Your laundry request has been approved, and driver ${driver.name} has been assigned for pickup. Please wait for the driver to update their status.`
-                ]
-            );
+            await createNotification({
+                userId: order.customer_id,
+                orderId,
+                title: 'Pickup Driver Assigned',
+                message: `Your laundry request has been approved, and driver ${driver.name} has been assigned for pickup. Please wait for the driver to update their status.`,
+                type: 'delivery',
+                relatedUserId: driver_id,
+                targetUrl: `/customer/orders?orderId=${orderId}`
+            });
 
             await logActivity({
                 req,
@@ -610,14 +624,15 @@ const confirmLaundryReceipt = async (req, res) => {
             [orderId, nextStatus, workerId]
         );
 
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Laundry Received at Facility", ?)',
-            [
-                order.customer_id,
-                orderId,
-                `Your laundry for order ${order.order_number} has been received at our facility and is being calibrated on our scale.`
-            ]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId,
+            title: 'Laundry Received at Facility',
+            message: `Your laundry for order ${order.order_number} has been received at our facility and is being calibrated on our scale.`,
+            type: 'order',
+            relatedUserId: workerId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         await logActivity({
             req,
@@ -716,10 +731,15 @@ const recordLaundryWeight = async (req, res) => {
         );
 
         // Customer notification
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-            [order.customer_id, orderId, notifTitle, notifMessage]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId,
+            title: notifTitle,
+            message: notifMessage,
+            type: 'order',
+            relatedUserId: workerId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         await logActivity({
             req,
@@ -780,10 +800,15 @@ const sendPriceToCustomer = async (req, res) => {
             [orderId, nextStatus, `Sent final pricing to customer: ₱${finalPrice.toFixed(2)} for ${pricing.measuredWeight} kg across ${pricing.loadCount} load(s).`, workerId]
         );
 
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-            [order.customer_id, orderId, notifTitle, notifMessage]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId,
+            title: notifTitle,
+            message: notifMessage,
+            type: 'order',
+            relatedUserId: workerId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         await logActivity({
             req,
@@ -847,13 +872,14 @@ const customerWeightDecision = async (req, res) => {
             );
 
             // Notify staff
-            const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
-            for (const worker of staff) {
-                await db.query(
-                    'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Weight Proposal Approved", ?)',
-                    [worker.id, orderId, `Customer approved weight allocation for order ${order.order_number}. Processing has commenced.`]
-                );
-            }
+            await notifyWorkersAndAdmin({
+                orderId,
+                title: 'Weight Proposal Approved',
+                message: `Customer approved weight allocation for order ${order.order_number}. Processing has commenced.`,
+                type: 'order',
+                relatedUserId: customerId,
+                targetUrl: `/worker/orders?orderId=${orderId}`
+            });
 
             await logActivity({
                 req,
@@ -891,13 +917,14 @@ const customerWeightDecision = async (req, res) => {
             );
 
             // Notify staff to contact customer or arrange return
-            const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
-            for (const worker of staff) {
-                await db.query(
-                    'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Customer Rejected Weight Proposal", ?)',
-                    [worker.id, orderId, `Customer rejected weight proposal for order ${order.order_number}. Staff resolution or return required.`]
-                );
-            }
+            await notifyWorkersAndAdmin({
+                orderId,
+                title: 'Customer Rejected Weight Proposal',
+                message: `Customer rejected weight proposal for order ${order.order_number}. Staff resolution or return required.`,
+                type: 'order',
+                relatedUserId: customerId,
+                targetUrl: `/worker/orders?orderId=${orderId}`
+            });
 
             await logActivity({
                 req,
@@ -968,10 +995,15 @@ const updateProcessingStage = async (req, res) => {
             [orderId, nextOrderStatus, notes || `Processing stage advanced to ${stage}`, workerId]
         );
 
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-            [order.customer_id, orderId, notifTitle, notifMsg]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId,
+            title: notifTitle,
+            message: notifMsg,
+            type: 'order',
+            relatedUserId: workerId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         await logActivity({
             req,
@@ -1027,7 +1059,7 @@ const getWorkflowCounts = async (req, res) => {
             else if (st === 'Pickup in Progress') counts['Pickup in Progress']++;
             else if (st === 'Laundry Received' || st === 'Picked Up') counts['Laundry Received']++;
             else if (st === 'Awaiting Customer Approval') counts['Awaiting Customer Approval']++;
-            else if (st === 'Processing' || st === 'Washing' || st === 'Drying' || st === 'Folding') counts['Processing']++;
+            else if (st === 'Processing' || st === 'Washing' || st === 'Drying' || st === 'Folding' || st === 'Quality Check') counts['Processing']++;
             else if (st === 'Ready for Delivery' || st === 'Ready') counts['Ready for Delivery']++;
             else if (st === 'Delivery Assigned' || st === 'Out for Delivery') counts['Delivery in Progress']++;
             else if (st === 'Delivered' || st === 'Completed') counts['Completed']++;
@@ -1093,10 +1125,15 @@ const updateOrderStatus = async (req, res) => {
             [orderId, status, notes || `Status updated to ${status}`, userId]
         );
 
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Order Status Updated", ?)',
-            [currentOrder.customer_id, orderId, `Your order ${currentOrder.order_number} status is now ${status}.`]
-        );
+        await createNotification({
+            userId: currentOrder.customer_id,
+            orderId,
+            title: 'Order Status Updated',
+            message: `Your order ${currentOrder.order_number} status is now ${status}.`,
+            type: 'order',
+            relatedUserId: userId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         await logActivity({
             req,
@@ -1125,7 +1162,7 @@ const cancelOrder = async (req, res) => {
         const userId = req.user.id;
         const isStaff = req.user.role === 'worker' || req.user.role === 'admin';
 
-        let query = 'SELECT status, customer_id, order_number FROM laundry_orders WHERE id = ?';
+        let query = 'SELECT status, customer_id, order_number, assigned_pickup_driver_id, assigned_delivery_driver_id FROM laundry_orders WHERE id = ?';
         let params = [orderId];
         if (!isStaff) {
             query += ' AND customer_id = ?';
@@ -1134,8 +1171,9 @@ const cancelOrder = async (req, res) => {
 
         const [orders] = await db.query(query, params);
         if (orders.length === 0) return res.status(404).json({ message: 'Order not found' });
+        const targetOrder = orders[0];
 
-        if (!isStaff && orders[0].status !== 'Pending Approval' && orders[0].status !== 'Pending Request') {
+        if (!isStaff && targetOrder.status !== 'Pending Approval' && targetOrder.status !== 'Pending Request') {
             return res.status(400).json({ 
                 message: 'This order is already being processed or assigned and cannot be cancelled automatically.' 
             });
@@ -1150,13 +1188,49 @@ const cancelOrder = async (req, res) => {
             [orderId, isStaff ? `Cancelled by staff (${req.user.name || req.user.role})` : 'Cancelled by customer', userId]
         );
 
+        // Notify customer or staff
+        if (isStaff) {
+            await createNotification({
+                userId: targetOrder.customer_id,
+                orderId,
+                title: 'Order Cancelled',
+                message: `Your laundry order ${targetOrder.order_number} was cancelled by laundry staff.`,
+                type: 'order',
+                relatedUserId: userId,
+                targetUrl: `/customer/orders?orderId=${orderId}`
+            });
+        } else {
+            await notifyWorkersAndAdmin({
+                orderId,
+                title: 'Order Cancelled by Customer',
+                message: `Customer cancelled order ${targetOrder.order_number}.`,
+                type: 'order',
+                relatedUserId: userId,
+                targetUrl: `/worker/orders?orderId=${orderId}`
+            });
+
+            // If a driver was assigned, notify them of cancellation
+            const assignedDriver = targetOrder.assigned_pickup_driver_id || targetOrder.assigned_delivery_driver_id;
+            if (assignedDriver) {
+                await createNotification({
+                    userId: assignedDriver,
+                    orderId,
+                    title: 'Assigned Task Cancelled',
+                    message: `Order ${targetOrder.order_number} has been cancelled by the customer.`,
+                    type: 'delivery',
+                    relatedUserId: userId,
+                    targetUrl: '/driver'
+                });
+            }
+        }
+
         await logActivity({
             req,
             actorId: userId,
             actorName: req.user.name,
             actorRole: req.user.role,
             actionType: 'order_cancelled',
-            description: `Order ${orders[0].order_number} was cancelled by ${isStaff ? 'staff' : 'customer'}`,
+            description: `Order ${targetOrder.order_number} was cancelled by ${isStaff ? 'staff' : 'customer'}`,
             entityType: 'order',
             entityId: orderId,
             outcome: 'failure'
@@ -1337,12 +1411,13 @@ const createWalkInOrder = async (req, res) => {
         const isPaid = (payment_status === 'paid' || payment_status === 'Paid');
         const initialPaymentStatus = isPaid ? 'paid' : 'unpaid';
         const finalPaymentMethod = payment_method || 'cash';
-        const initialStatus = 'Pending';
+        const initialStatus = 'Processing';
+        const initialStage = 'Washing';
 
         const [orderResult] = await db.query(
             `INSERT INTO laundry_orders 
-            (order_number, customer_id, service_type, service_name, estimated_weight, actual_weight, total_amount, estimated_amount, final_amount, load_count, load_details, pricing_version, preferred_date, preferred_time, special_instructions, status, payment_status, payment_method, is_walkin, registered_by, payment_collected_by, payment_collected_at) 
-            VALUES (?, ?, 'customer_dropoff', ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), 'Drop-off', ?, ?, ?, ?, 1, ?, ?, ?)`,
+            (order_number, customer_id, service_type, service_name, estimated_weight, actual_weight, total_amount, estimated_amount, final_amount, load_count, load_details, pricing_version, preferred_date, preferred_time, special_instructions, status, processing_stage, processing_started_at, weight_approved_by_customer, weight_approved_at, weight_recorded_by, weight_recorded_at, payment_status, payment_method, is_walkin, registered_by, payment_collected_by, payment_collected_at) 
+            VALUES (?, ?, 'customer_dropoff', ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), 'Drop-off', ?, ?, ?, NOW(), 1, NOW(), ?, NOW(), ?, ?, 1, ?, ?, ?)`,
             [
                 order_number,
                 targetCustomerId,
@@ -1357,6 +1432,8 @@ const createWalkInOrder = async (req, res) => {
                 pricing.pricingVersion,
                 special_instructions || 'Walk-in / Drop-off Laundry at Shop',
                 initialStatus,
+                initialStage,
+                workerId,
                 initialPaymentStatus,
                 finalPaymentMethod,
                 workerId,
@@ -1390,10 +1467,10 @@ const createWalkInOrder = async (req, res) => {
             });
         }
 
-        // Status history entry
+        // Status history entry - records initial Processing status and Washing stage
         await db.query(
             'INSERT INTO laundry_status_history (order_id, status, notes, changed_by) VALUES (?, ?, ?, ?)',
-            [orderId, initialStatus, `Walk-in laundry registered by worker ${workerName} (${numericWeight} kg, ₱${calcAmount.toFixed(2)}, ${initialPaymentStatus})`, workerId]
+            [orderId, initialStatus, `Walk-in laundry registered by worker ${workerName} (${numericWeight} kg, ₱${calcAmount.toFixed(2)}, ${initialPaymentStatus}). Processing started automatically in ${initialStage} stage.`, workerId]
         );
 
         // Activity log for walk-in registration
@@ -1403,7 +1480,7 @@ const createWalkInOrder = async (req, res) => {
             actorName: workerName,
             actorRole: req.user.role,
             actionType: 'walk_in_registered',
-            description: `Walk-in laundry registered – Worker: ${workerName}`,
+            description: `Walk-in laundry registered and started processing – Worker: ${workerName}`,
             entityType: 'order',
             entityId: orderId,
             outcome: 'success',
@@ -1413,19 +1490,36 @@ const createWalkInOrder = async (req, res) => {
                 weight: numericWeight,
                 total_amount: calcAmount,
                 payment_status: initialPaymentStatus,
+                status: initialStatus,
+                processing_stage: initialStage,
                 worker_name: workerName
             }
         });
 
         // Customer notification
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Laundry Added", "Laundry transaction successfully registered")',
-            [targetCustomerId, orderId]
-        );
+        await createNotification({
+            userId: targetCustomerId,
+            orderId,
+            title: 'Laundry Processing Started',
+            message: `Walk-in laundry order ${order_number} (${numericWeight} kg) has started processing (${initialStage} stage).`,
+            type: 'order',
+            relatedUserId: workerId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
+
+        // Notify staff
+        await notifyWorkersAndAdmin({
+            orderId,
+            title: 'New Walk-In Laundry In Processing',
+            message: `Walk-in laundry ${order_number} registered by ${workerName} for ${finalCustomerName} is now in processing.`,
+            type: 'order',
+            relatedUserId: workerId,
+            targetUrl: `/worker/orders?orderId=${orderId}`
+        });
 
         res.status(201).json({
             success: true,
-            message: 'Laundry transaction successfully added.',
+            message: 'Laundry transaction successfully added and set to Processing.',
             orderId,
             order: {
                 id: orderId,
@@ -1434,7 +1528,8 @@ const createWalkInOrder = async (req, res) => {
                 weight: numericWeight,
                 total_amount: calcAmount,
                 payment_status: initialPaymentStatus,
-                status: initialStatus
+                status: initialStatus,
+                processing_stage: initialStage
             },
             order_number,
             customer_name: finalCustomerName,
@@ -1443,7 +1538,8 @@ const createWalkInOrder = async (req, res) => {
             load_count: loadCount,
             loads: pricing.loads,
             payment_status: initialPaymentStatus,
-            status: initialStatus
+            status: initialStatus,
+            processing_stage: initialStage
         });
     } catch (error) {
         console.error('Error creating walk-in order:', error);
@@ -1474,10 +1570,15 @@ const startLaundryProcessing = async (req, res) => {
         );
 
         // Customer notification
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Processing Started", "Your laundry is being processed. Please allow approximately 2 hours")',
-            [order.customer_id, orderId]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId,
+            title: 'Processing Started',
+            message: 'Your laundry is being processed. Please allow approximately 2 hours.',
+            type: 'order',
+            relatedUserId: workerId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         // Activity log
         await logActivity({
@@ -1527,10 +1628,15 @@ const markLaundryReady = async (req, res) => {
         );
 
         // Customer notification
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Laundry Ready", "Your laundry is ready. Choose delivery or self-pickup")',
-            [order.customer_id, orderId]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId,
+            title: 'Laundry Ready',
+            message: 'Your laundry is ready. Choose delivery or self-pickup.',
+            type: 'order',
+            relatedUserId: workerId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         // Activity log
         await logActivity({
@@ -1608,13 +1714,14 @@ const selectFulfillmentChoice = async (req, res) => {
             actDesc = `Customer selected delivery – Order #${order.order_number}`;
 
             // Notify staff
-            const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
-            for (const worker of staff) {
-                await db.query(
-                    'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Delivery Option Selected", ?)',
-                    [worker.id, orderId, `Customer selected delivery for order ${order.order_number}. Address: ${finalAddress}`]
-                );
-            }
+            await notifyWorkersAndAdmin({
+                orderId,
+                title: 'Delivery Option Selected',
+                message: `Customer selected delivery for order ${order.order_number}. Address: ${finalAddress}`,
+                type: 'delivery',
+                relatedUserId: customerId,
+                targetUrl: `/worker/orders?orderId=${orderId}`
+            });
         } else {
             // self_pickup
             newOrderStatus = 'Customer Pickup';
@@ -1629,13 +1736,14 @@ const selectFulfillmentChoice = async (req, res) => {
             actDesc = `Customer selected self-pickup – Order #${order.order_number}`;
 
             // Notify staff
-            const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
-            for (const worker of staff) {
-                await db.query(
-                    'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Self-Pickup Selected", ?)',
-                    [worker.id, orderId, `Customer selected self-pickup for order ${order.order_number}. Awaiting customer collection at shop.`]
-                );
-            }
+            await notifyWorkersAndAdmin({
+                orderId,
+                title: 'Self-Pickup Selected',
+                message: `Customer selected self-pickup for order ${order.order_number}. Awaiting customer collection at shop.`,
+                type: 'order',
+                relatedUserId: customerId,
+                targetUrl: `/worker/orders?orderId=${orderId}`
+            });
         }
 
         // Status history
@@ -1645,10 +1753,14 @@ const selectFulfillmentChoice = async (req, res) => {
         );
 
         // Customer notification
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-            [order.customer_id, orderId, notifTitle, notifMsg]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId,
+            title: notifTitle,
+            message: notifMsg,
+            type: choice === 'delivery' ? 'delivery' : 'order',
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         // Centralized activity log
         await logActivity({
@@ -1709,10 +1821,15 @@ const completeOrder = async (req, res) => {
         );
 
         // Customer notification
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Completed", "Your laundry transaction is completed")',
-            [order.customer_id, orderId]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId,
+            title: 'Completed',
+            message: 'Your laundry transaction is completed. Thank you for choosing LaundriGo!',
+            type: 'order',
+            relatedUserId: userId,
+            targetUrl: `/customer/orders?orderId=${orderId}`
+        });
 
         // Log specific action (picked up by customer vs delivered)
         await logActivity({
@@ -1814,10 +1931,15 @@ const updateOrderPaymentStatus = async (req, res) => {
             });
 
             // Customer notification
-            await db.query(
-                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Payment Received", ?)',
-                [order.customer_id, orderId, `Payment of ₱${amount.toFixed(2)} has been recorded for order ${order.order_number}.`]
-            );
+            await createNotification({
+                userId: order.customer_id,
+                orderId,
+                title: 'Payment Received',
+                message: `Payment of ₱${amount.toFixed(2)} has been recorded for order ${order.order_number}.`,
+                type: 'payment',
+                relatedUserId: workerId,
+                targetUrl: `/customer/payments`
+            });
         } else {
             await db.query(
                 'UPDATE laundry_orders SET payment_status = "unpaid", payment_collected_by = NULL, payment_collected_at = NULL WHERE id = ?',

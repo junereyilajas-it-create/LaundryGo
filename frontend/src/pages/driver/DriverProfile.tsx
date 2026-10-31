@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { User, Phone, Mail, Lock } from 'lucide-react';
+import NotificationSettingsCard from '../../components/notifications/NotificationSettingsCard';
 
 export default function DriverProfile() {
   const { user } = useAuth();
@@ -82,6 +83,9 @@ export default function DriverProfile() {
           </button>
         </form>
       </div>
+
+      {/* Real-time Notification Preferences */}
+      <NotificationSettingsCard />
     </div>
   );
 }

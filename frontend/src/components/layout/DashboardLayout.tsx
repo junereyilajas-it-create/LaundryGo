@@ -9,20 +9,12 @@ import {
   BarChart3, Trash2, Check, ArrowRight, Smartphone
 } from 'lucide-react';
 import MobilePreviewModal from '../common/MobilePreviewModal';
+import NotificationBell from '../notifications/NotificationBell';
 
 interface NavItem {
   name: string;
   href: string;
   icon: React.ElementType;
-}
-
-interface Notification {
-  id: number;
-  order_id?: number | null;
-  title: string;
-  message: string;
-  is_read: number;
-  created_at: string;
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -34,11 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isDesktopOpen, setIsDesktopOpen] = useState(true);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
-
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
@@ -46,9 +34,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
-        setIsNotifOpen(false);
-      }
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setIsProfileOpen(false);
       }
@@ -56,103 +41,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const fetchNotifications = async () => {
-    try {
-      const { data } = await api.get('/notifications');
-      setNotifications(data);
-    } catch (err) {
-      // silent catch for polling
-    }
-  };
-
-  const handleMarkAsRead = async (id: number, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    try {
-      await api.put(`/notifications/${id}/read`);
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: 1 } : n)));
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleMarkAllAsRead = async () => {
-    try {
-      await api.put('/notifications/read-all');
-      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: 1 })));
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleDeleteNotification = async (id: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await api.delete(`/notifications/${id}`);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-    } catch (err) {
-      console.error('Error deleting notification:', err);
-    }
-  };
-
-  const handleClearAllNotifications = async () => {
-    try {
-      await api.delete('/notifications/clear-all');
-      setNotifications([]);
-    } catch (err) {
-      console.error('Error clearing notifications:', err);
-    }
-  };
-
-  const handleNotificationClick = async (n: Notification) => {
-    if (!n.is_read) {
-      handleMarkAsRead(n.id);
-    }
-    setIsNotifOpen(false);
-
-    const titleLower = (n.title || '').toLowerCase();
-    const msgLower = (n.message || '').toLowerCase();
-    const combined = `${titleLower} ${msgLower}`;
-
-    // Role-based exact navigation mapping
-    if (user?.role === 'customer') {
-      if (n.order_id) {
-        navigate(`/customer/orders?orderId=${n.order_id}`);
-      } else if (combined.includes('payment') || combined.includes('paid')) {
-        navigate('/customer/payments');
-      } else if (combined.includes('driver') || combined.includes('pickup') || combined.includes('delivery')) {
-        navigate('/customer/tracking');
-      } else {
-        navigate('/customer/orders');
-      }
-    } else if (user?.role === 'worker' || user?.role === 'admin') {
-      if (combined.includes('driver application') || combined.includes('application submitted') || combined.includes('applicant')) {
-        if (user.role === 'admin') {
-          navigate('/worker/users?tab=applications');
-        } else {
-          navigate('/worker/orders');
-        }
-      } else if (n.order_id) {
-        navigate(`/worker/orders?orderId=${n.order_id}`);
-      } else if (combined.includes('payment') || combined.includes('paid')) {
-        navigate('/worker/payments');
-      } else if (combined.includes('driver location') || combined.includes('tracking')) {
-        navigate('/worker/tracking');
-      } else {
-        navigate('/worker/orders');
-      }
-    } else if (user?.role === 'driver') {
-      if (n.order_id) {
-        navigate('/driver');
-      } else if (combined.includes('application') || combined.includes('approved') || combined.includes('rejected')) {
-        navigate('/driver/profile');
-      } else if (combined.includes('map') || combined.includes('navigation') || combined.includes('pickup') || combined.includes('delivery')) {
-        navigate('/driver/map');
-      } else {
-        navigate('/driver');
-      }
-    }
-  };
 
   const handleLogout = () => {
     logout();
@@ -208,8 +96,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     return location.pathname.startsWith(path);
   };
-
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   return (
     <div className={`flex min-h-screen w-full ${theme === 'dark' ? 'dark' : ''}`}>
@@ -345,124 +231,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <span className="hidden xl:inline">Mobile Preview</span>
               </button>
 
-              {/* Notification Bell */}
-              <div className="relative" ref={notifRef}>
-                <button
-                  onClick={() => setIsNotifOpen(!isNotifOpen)}
-                  className="relative p-2 rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <Bell className="w-5 h-5" />
-                  {unreadCount > 0 && (
-                    <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white ring-2 ring-white dark:ring-gray-900">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
-                </button>
-
-                {/* Notifications Dropdown */}
-                {isNotifOpen && (
-                  <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-2xl z-50 overflow-hidden">
-                    <div className="flex items-center justify-between p-3.5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/90 dark:bg-gray-850">
-                      <div>
-                        <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
-                          <span>Notifications</span>
-                          {unreadCount > 0 && (
-                            <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
-                              {unreadCount} new
-                            </span>
-                          )}
-                        </h3>
-                        <p className="text-[11px] text-gray-500">Click to view relevant order or action</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {unreadCount > 0 && (
-                          <button
-                            onClick={handleMarkAllAsRead}
-                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold"
-                          >
-                            Mark all read
-                          </button>
-                        )}
-                        {notifications.length > 0 && (
-                          <button
-                            onClick={handleClearAllNotifications}
-                            className="text-xs text-gray-400 hover:text-red-600 dark:hover:text-red-400 font-medium"
-                            title="Clear all notifications"
-                          >
-                            Clear all
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="max-h-80 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800 custom-scrollbar">
-                      {notifications.length === 0 ? (
-                        <div className="p-8 text-center text-xs text-gray-400">
-                          <Bell className="w-8 h-8 text-gray-300 dark:text-gray-700 mx-auto mb-2 opacity-50" />
-                          No notifications yet.
-                        </div>
-                      ) : (
-                        notifications.map((n) => (
-                          <div
-                            key={n.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => handleNotificationClick(n)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleNotificationClick(n)}
-                            className={`p-3.5 cursor-pointer transition-all hover:bg-blue-50/40 dark:hover:bg-blue-900/20 focus:outline-none focus:bg-blue-50/60 dark:focus:bg-blue-900/30 group ${
-                              n.is_read ? 'opacity-70 bg-transparent' : 'bg-blue-50/60 dark:bg-blue-950/25 border-l-4 border-l-blue-600'
-                            }`}
-                          >
-                            <div className="flex justify-between items-start gap-2">
-                              <h4 className="text-xs font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                                {n.title}
-                              </h4>
-                              <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                {!n.is_read && (
-                                  <button
-                                    onClick={(e) => handleMarkAsRead(n.id, e)}
-                                    title="Mark as read"
-                                    className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/40"
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                <button
-                                  onClick={(e) => handleDeleteNotification(n.id, e)}
-                                  title="Delete notification"
-                                  className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-
-                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-relaxed">
-                              {n.message}
-                            </p>
-
-                            <div className="flex items-center justify-between gap-2 mt-2 pt-1 border-t border-gray-100/60 dark:border-gray-800/60 text-[10px]">
-                              <span className="text-gray-400">
-                                {new Date(n.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </span>
-
-                              {n.order_id ? (
-                                <span className="font-semibold text-blue-600 dark:text-blue-400 group-hover:underline flex items-center gap-0.5">
-                                  Order #{n.order_id} <ArrowRight className="w-2.5 h-2.5 inline" />
-                                </span>
-                              ) : (
-                                <span className="font-medium text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-center gap-0.5">
-                                  View details <ArrowRight className="w-2.5 h-2.5 inline" />
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+              {/* Facebook-Style Real-Time Notification Bell */}
+              <NotificationBell />
 
               {/* Theme Toggle */}
               <button

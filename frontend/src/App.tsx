@@ -2,6 +2,9 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { NotificationProvider } from './context/NotificationContext';
+import NotificationToast from './components/notifications/NotificationToast';
+import NotificationPreferencesModal from './components/notifications/NotificationPreferencesModal';
 
 // Public Pages
 import LandingPage from './pages/LandingPage';
@@ -217,7 +220,11 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <Router>
-          <AppContent />
+          <NotificationProvider>
+            <AppContent />
+            <NotificationToast />
+            <NotificationPreferencesModal />
+          </NotificationProvider>
         </Router>
       </AuthProvider>
     </ThemeProvider>

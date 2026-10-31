@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { createNotification } = require('../services/notificationService');
 
 // Get all messages for a specific order
 exports.getOrderMessages = async (req, res) => {
@@ -116,15 +117,15 @@ exports.sendOrderMessage = async (req, res) => {
         }
 
         for (const recipientId of recipientIds) {
-            await db.query(
-                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-                [
-                    recipientId,
-                    orderId,
-                    `New message for ${order.order_number}`,
-                    `${req.user.name || 'User'}: ${message.trim().substring(0, 60)}`
-                ]
-            );
+            await createNotification({
+                userId: recipientId,
+                orderId: parseInt(orderId),
+                title: `New message on #${order.order_number}`,
+                message: `${req.user.name || 'User'}: ${message.trim().substring(0, 60)}`,
+                type: 'order',
+                relatedUserId: senderId,
+                targetUrl: null // will be resolved per recipient's role
+            });
         }
 
         res.status(201).json({

@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { logActivity } = require('../utils/activityLogger');
+const { createNotification, notifyWorkersAndAdmin } = require('../services/notificationService');
 
 // ---- PICKUPS ----
 
@@ -132,22 +133,28 @@ exports.updatePickupStatus = async (req, res) => {
             notifMsg = 'Your laundry has been picked up successfully. It will be weighed and checked by our laundry staff before processing begins.';
 
             // Also notify worker queue to weigh
-            const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
-            for (const worker of staff) {
-                await db.query(
-                    'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Laundry Picked Up - Weighing Required", ?)',
-                    [worker.id, task.order_id, `Driver completed pickup for order ${task.order_number}. Arriving at shop for weighing and confirmation.`]
-                );
-            }
+            await notifyWorkersAndAdmin({
+                orderId: task.order_id,
+                title: 'Laundry Picked Up - Weighing Required',
+                message: `Driver completed pickup for order ${task.order_number}. Arriving at shop for weighing and confirmation.`,
+                type: 'delivery',
+                relatedUserId: userId,
+                targetUrl: `/worker/orders?orderId=${task.order_id}`
+            });
         } else if (status === 'failed') {
             notifTitle = 'Pickup Attempt Failed';
             notifMsg = `Pickup for order ${task.order_number} could not be completed: ${failure_reason || 'Driver reported issue'}.`;
         }
 
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-            [task.customer_id, task.order_id, notifTitle, notifMsg]
-        );
+        await createNotification({
+            userId: task.customer_id,
+            orderId: task.order_id,
+            title: notifTitle,
+            message: notifMsg,
+            type: 'delivery',
+            relatedUserId: userId,
+            targetUrl: `/customer/orders?orderId=${task.order_id}`
+        });
 
         const pickupDesc = status === 'picked_up' 
             ? `Laundry picked up by a driver – Order #${task.order_number}` 
@@ -314,22 +321,28 @@ exports.updateDeliveryStatus = async (req, res) => {
             notifMsg = `Your laundry order ${task.order_number} has been delivered successfully. Thank you for choosing LaundriGo!`;
 
             // Also notify worker staff that delivery is complete
-            const [staff] = await db.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
-            for (const worker of staff) {
-                await db.query(
-                    'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "Delivery Completed", ?)',
-                    [worker.id, task.order_id, `Order ${task.order_number} was successfully delivered by driver.`]
-                );
-            }
+            await notifyWorkersAndAdmin({
+                orderId: task.order_id,
+                title: 'Delivery Completed',
+                message: `Order ${task.order_number} was successfully delivered by driver.`,
+                type: 'delivery',
+                relatedUserId: userId,
+                targetUrl: `/worker/orders?orderId=${task.order_id}`
+            });
         } else if (status === 'failed') {
             notifTitle = 'Delivery Attempt Failed';
             notifMsg = `Delivery for order ${task.order_number} could not be completed: ${failure_reason || 'Driver reported issue'}.`;
         }
 
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, ?, ?)',
-            [task.customer_id, task.order_id, notifTitle, notifMsg]
-        );
+        await createNotification({
+            userId: task.customer_id,
+            orderId: task.order_id,
+            title: notifTitle,
+            message: notifMsg,
+            type: 'delivery',
+            relatedUserId: userId,
+            targetUrl: `/customer/orders?orderId=${task.order_id}`
+        });
 
         const deliveryDesc = status === 'delivered' 
             ? `Laundry delivered – Order #${task.order_number}` 

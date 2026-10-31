@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { logActivity } = require('../utils/activityLogger');
+const { createNotification, notifyWorkersAndAdmin } = require('../services/notificationService');
 
 // Helper to recalculate payment status on the order
 const recalculateOrderPayment = async (order_id) => {
@@ -273,14 +274,24 @@ exports.verifyGcashPayment = async (req, res) => {
         const orderPaymentStatus = await recalculateOrderPayment(payment.order_id);
 
         // Notify customer
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "GCash Payment Confirmed", ?)',
-            [
-                payment.customer_id, 
-                payment.order_id, 
-                `Your GCash payment of ₱${parseFloat(payment.amount).toFixed(2)} for order ${payment.order_number} (Ref: ${reference_number}) was received successfully.`
-            ]
-        );
+        await createNotification({
+            userId: payment.customer_id,
+            orderId: payment.order_id,
+            title: 'GCash Payment Confirmed',
+            message: `Your GCash payment of ₱${parseFloat(payment.amount).toFixed(2)} for order ${payment.order_number} (Ref: ${reference_number}) was received successfully.`,
+            type: 'payment',
+            targetUrl: `/customer/payments`
+        });
+
+        // Notify workers/admin
+        await notifyWorkersAndAdmin({
+            orderId: payment.order_id,
+            title: 'Payment Received (GCash)',
+            message: `GCash payment of ₱${parseFloat(payment.amount).toFixed(2)} received for order ${payment.order_number} (Ref: ${reference_number}).`,
+            type: 'payment',
+            relatedUserId: payment.customer_id,
+            targetUrl: `/worker/payments`
+        });
 
         await logActivity({
             req,
@@ -350,14 +361,25 @@ exports.recordCodCollection = async (req, res) => {
         );
 
         // Notify customer
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "COD Payment Received", ?)',
-            [
-                order.customer_id, 
-                order_id, 
-                `Cash on Delivery payment of ₱${cashAmount.toFixed(2)} received by ${req.user.name}. Reference: ${referenceNumber}.`
-            ]
-        );
+        await createNotification({
+            userId: order.customer_id,
+            orderId: order_id,
+            title: 'COD Payment Received',
+            message: `Cash on Delivery payment of ₱${cashAmount.toFixed(2)} received by ${req.user.name}. Reference: ${referenceNumber}.`,
+            type: 'payment',
+            relatedUserId: collectorId,
+            targetUrl: `/customer/payments`
+        });
+
+        // Notify workers/admin
+        await notifyWorkersAndAdmin({
+            orderId: order_id,
+            title: 'COD Payment Collected',
+            message: `Cash on Delivery ₱${cashAmount.toFixed(2)} collected by ${req.user.name} for order ${order.order_number}.`,
+            type: 'payment',
+            relatedUserId: collectorId,
+            targetUrl: `/worker/payments`
+        });
 
         await logActivity({
             req,
@@ -749,23 +771,24 @@ exports.verifyAndProcessGcashDemoPayment = async (req, res) => {
         );
 
         // Customer notification
-        await conn.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "GCash Demo Payment Confirmed", ?)',
-            [
-                customer_id,
-                targetOrderId,
-                `Your simulated GCash payment of ₱${payableAmount.toFixed(2)} for order ${orderNumber} (Ref: ${referenceNumber}) has been recorded. Your order is Pending Approval.`
-            ]
-        );
+        await createNotification({
+            userId: customer_id,
+            orderId: targetOrderId,
+            title: 'GCash Demo Payment Confirmed',
+            message: `Your simulated GCash payment of ₱${payableAmount.toFixed(2)} for order ${orderNumber} (Ref: ${referenceNumber}) has been recorded. Your order is Pending Approval.`,
+            type: 'payment',
+            targetUrl: `/customer/payments`
+        });
 
         // Worker notification
-        const [staff] = await conn.query('SELECT id FROM users WHERE role IN ("worker", "admin")');
-        for (const worker of staff) {
-            await conn.query(
-                'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "New Order (GCash Demo Paid)", ?)',
-                [worker.id, targetOrderId, `Order ${orderNumber} submitted by customer with simulated GCash payment of ₱${payableAmount.toFixed(2)}.`]
-            );
-        }
+        await notifyWorkersAndAdmin({
+            orderId: targetOrderId,
+            title: 'New Order (GCash Demo Paid)',
+            message: `Order ${orderNumber} submitted by customer with simulated GCash payment of ₱${payableAmount.toFixed(2)}.`,
+            type: 'payment',
+            relatedUserId: customer_id,
+            targetUrl: `/worker/orders?orderId=${targetOrderId}`
+        });
 
         await conn.commit();
 
@@ -827,10 +850,14 @@ exports.selectCodPayment = async (req, res) => {
         );
 
         // Notify customer
-        await db.query(
-            'INSERT INTO notifications (user_id, order_id, title, message) VALUES (?, ?, "COD Payment Method Selected", ?)',
-            [customer_id, order_id, `Cash on Delivery selected for order ${order.order_number}. Our delivery driver will collect ₱${parseFloat(order.total_amount || 0).toFixed(2)} upon delivery.`]
-        );
+        await createNotification({
+            userId: customer_id,
+            orderId: order_id,
+            title: 'COD Payment Method Selected',
+            message: `Cash on Delivery selected for order ${order.order_number}. Our delivery driver will collect ₱${parseFloat(order.total_amount || 0).toFixed(2)} upon delivery.`,
+            type: 'payment',
+            targetUrl: `/customer/payments`
+        });
 
         res.json({
             success: true,
